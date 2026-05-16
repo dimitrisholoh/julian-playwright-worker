@@ -1,25 +1,46 @@
 const { chromium } = require('playwright');
 
 async function run() {
+
   const browser = await chromium.launch({
     headless: true
   });
 
   const page = await browser.newPage();
 
-  await page.goto('https://b2bfashion.online', {
+  console.log('Opening Julian B2B...');
+
+  await page.goto(process.env.JULIAN_LOGIN_URL, {
     waitUntil: 'networkidle',
     timeout: 60000
   });
 
-  console.log('Julian B2B opened successfully');
+  console.log('Login page opened');
+
+  await page.fill('input[type="email"]', process.env.JULIAN_EMAIL);
+
+  await page.fill('input[type="password"]', process.env.JULIAN_PASSWORD);
+
+  console.log('Credentials filled');
+
+  await page.click('button[type="submit"]');
+
+  await page.waitForLoadState('networkidle');
+
+  console.log('Login submitted');
+
+  await page.screenshot({
+    path: 'login-success.png'
+  });
+
+  console.log('Screenshot saved');
 
   await browser.close();
 }
 
 run()
   .then(() => {
-    console.log('Scraper test completed');
+    console.log('Julian scraper finished successfully');
     setInterval(() => {}, 1000);
   })
   .catch((error) => {
