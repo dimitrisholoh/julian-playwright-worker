@@ -24,6 +24,10 @@ function buildProductKey(item) {
   ].join('__').toLowerCase();
 }
 
+function escapeCsv(value) {
+  return `"${String(value ?? '').replace(/"/g, '""')}"`;
+}
+
 async function run() {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
@@ -165,6 +169,46 @@ async function run() {
 
   console.log('Total variants:', totalVariants);
 
+  const shopifyRows = [];
+
+  for (const product of shopifyProducts) {
+    product.variants.forEach((variant, index) => {
+      shopifyRows.push({
+        Handle: product.handle,
+        Title: index === 0 ? product.title : '',
+        Body: index === 0 ? product.description : '',
+        Vendor: index === 0 ? product.vendor : '',
+        Type: index === 0 ? product.product_type : '',
+        Tags: index === 0 ? product.tags.join(', ') : '',
+        Published: 'TRUE',
+        'Option1 Name': variant.option1_name,
+        'Option1 Value': variant.option1_value,
+        'Variant SKU': variant.sku,
+        'Variant Price': variant.price,
+        'Variant Compare At Price': variant.retail_price,
+        'Variant Cost': variant.cost_price,
+        'Variant Inventory Qty': variant.inventory_quantity,
+        'Image Src': product.images[index] || '',
+        'Image Position': product.images[index] ? index + 1 : '',
+        Status: 'active'
+      });
+    });
+  }
+
+  const headers = Object.keys(shopifyRows[0]);
+
+  const csvOutput = [
+    headers.join(','),
+    ...shopifyRows.map(row =>
+      headers.map(header => escapeCsv(row[header])).join(',')
+    )
+  ].join('\n');
+
+  fs.writeFileSync('julian-shopify-import.csv', csvOutput);
+
+  console.log('Shopify CSV rows:', shopifyRows.length);
+  console.log('Shopify CSV generated');
+
   console.log('First Shopify-ready product:');
   console.log(JSON.stringify(shopifyProducts[0], null, 2));
 
@@ -173,10 +217,10 @@ async function run() {
 
 run()
   .then(() => {
-    console.log('Julian Shopify grouping completed');
+    console.log('Julian Shopify CSV generation completed');
     setInterval(() => {}, 1000);
   })
   .catch((error) => {
-    console.error('Grouping failed:', error);
+    console.error('Generation failed:', error);
     process.exit(1);
   });
