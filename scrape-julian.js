@@ -181,15 +181,19 @@ async function run() {
         Type: index === 0 ? product.product_type : '',
         Tags: index === 0 ? product.tags.join(', ') : '',
         Published: 'TRUE',
+
         'Option1 Name': variant.option1_name,
         'Option1 Value': variant.option1_value,
+
         'Variant SKU': variant.sku,
         'Variant Price': variant.price,
         'Variant Compare At Price': variant.retail_price,
         'Variant Cost': variant.cost_price,
         'Variant Inventory Qty': variant.inventory_quantity,
+
         'Image Src': product.images[index] || '',
         'Image Position': product.images[index] ? index + 1 : '',
+
         Status: 'active'
       });
     });
@@ -204,7 +208,17 @@ async function run() {
     )
   ].join('\n');
 
-  fs.writeFileSync('julian-shopify-import.csv', csvOutput);
+  const outputPath = '/app/output/julian-shopify-import.csv';
+
+  fs.mkdirSync('/app/output', { recursive: true });
+
+  fs.writeFileSync(outputPath, csvOutput);
+
+  console.log('CSV saved to:', outputPath);
+
+  const stats = fs.statSync(outputPath);
+
+  console.log('Final CSV file size:', stats.size, 'bytes');
 
   console.log('Shopify CSV rows:', shopifyRows.length);
   console.log('Shopify CSV generated');
