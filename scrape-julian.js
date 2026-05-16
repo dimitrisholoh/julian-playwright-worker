@@ -2,63 +2,58 @@ const { chromium } = require('playwright');
 const fs = require('fs');
 
 async function run() {
-  const browser = await chromium.launch({
-    headless: true
-  });
-
+  const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
 
   console.log('Opening Julian B2B...');
 
   await page.goto(process.env.JULIAN_LOGIN_URL, {
-    waitUntil: 'networkidle',
+    waitUntil: 'domcontentloaded',
     timeout: 60000
   });
 
   console.log('Login page opened');
 
   await page.fill('input[type="email"]', process.env.JULIAN_EMAIL);
-
   await page.fill('input[type="password"]', process.env.JULIAN_PASSWORD);
 
   console.log('Credentials filled');
 
   await page.click('button[type="submit"]');
-
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('domcontentloaded');
 
   console.log('Login submitted');
 
-  const exportUrl =
-    'https://b2bfashion.online/module/bbapi/get_export';
+  await page.context().storageState({ path: 'julian-session.json' });
+  console.log('Session saved');
 
-  console.log('Opening export endpoint...');
+  const exportUrl = 'https://b2bfashion.online/module/bbapi/get_export';
 
-  const response = await page.goto(exportUrl, {
-    waitUntil: 'networkidle',
-    timeout: 120000
-  });
+  console.log('Fetching export CSV...');
 
-  console.log('Export response status:', response.status());
+  const result = await page.evaluate(async (url) => {
+    const response = await fetch(url, {
+      method: 'GET',
+      credentials: 'include'
+    });
 
-  const csvContent = await page.textContent('body');
+    const text = await response.text();
 
-  fs.writeFileSync('julian-catalog.csv', csvContent);
+    return {
+      status: response.status,
+      contentType: response.headers.get('content-type'),
+      text
+    };
+  }, exportUrl);
+
+  console.log('Export response status:', result.status);
+  console.log('Export content type:', result.contentType);
+
+  fs.writeFileSync('julian-catalog.csv', result.text);
 
   console.log('CSV catalog saved');
-
-  console.log(
-    'CSV size:',
-    Buffer.byteLength(csvContent, 'utf8'),
-    'bytes'
-  );
-
-  await page.screenshot({
-    path: 'export-page.png',
-    fullPage: true
-  });
-
-  console.log('Export screenshot saved');
+  console.log('CSV size:', Buffer.byteLength(result.text, 'utf8'), 'bytes');
+  console.log('CSV preview:', result.text.slice(0, 500));
 
   await browser.close();
 }
