@@ -1,7 +1,6 @@
 const { chromium } = require('playwright');
 
 async function run() {
-
   const browser = await chromium.launch({
     headless: true
   });
@@ -28,6 +27,12 @@ async function run() {
   await page.waitForLoadState('networkidle');
 
   console.log('Login submitted');
+
+  await page.context().storageState({
+    path: 'julian-session.json'
+  });
+
+  console.log('Session saved');
 
   await page.screenshot({
     path: 'login-success.png'
