@@ -2,11 +2,30 @@ const { chromium } = require('playwright');
 const fs = require('fs');
 const { parse } = require('csv-parse/sync');
 
-async function run() {
-  const browser = await chromium.launch({
-    headless: true
-  });
+function clean(value) {
+  return String(value || '').trim();
+}
 
+function toNumber(value) {
+  const cleaned = clean(value).replace(',', '.');
+  const num = Number(cleaned);
+  return Number.isFinite(num) ? num : 0;
+}
+
+function cleanSize(value) {
+  return clean(value).replace(/^size:\s*/i, '').trim();
+}
+
+function buildProductKey(item) {
+  return [
+    clean(item.designer),
+    clean(item.cod),
+    clean(item.color)
+  ].join('__').toLowerCase();
+}
+
+async function run() {
+  const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
 
   console.log('Opening Julian B2B...');
@@ -19,19 +38,16 @@ async function run() {
   console.log('Login page opened');
 
   await page.fill('input[type="email"]', process.env.JULIAN_EMAIL);
-
   await page.fill('input[type="password"]', process.env.JULIAN_PASSWORD);
 
   console.log('Credentials filled');
 
   await page.click('button[type="submit"]');
-
   await page.waitForLoadState('domcontentloaded');
 
   console.log('Login submitted');
 
-  const exportUrl =
-    'https://b2bfashion.online/module/bbapi/get_export';
+  const exportUrl = 'https://b2bfashion.online/module/bbapi/get_export';
 
   console.log('Fetching export CSV...');
 
@@ -41,19 +57,16 @@ async function run() {
       credentials: 'include'
     });
 
-    const text = await response.text();
-
     return {
       status: response.status,
-      text
+      text: await response.text()
     };
   }, exportUrl);
 
   console.log('Export status:', result.status);
+  console.log('CSV size:', Buffer.byteLength(result.text, 'utf8'), 'bytes');
 
   fs.writeFileSync('julian-catalog.csv', result.text);
-
-  console.log('CSV saved');
 
   const records = parse(result.text, {
     columns: true,
@@ -62,57 +75,108 @@ async function run() {
     relax_column_count: true
   });
 
-  console.log('Parsed products:', records.length);
+  console.log('CSV rows parsed:', records.length);
 
-  const normalized = records.map((item) => {
-    return {
-      sku: item.cod || '',
-      designer: item.designer || '',
-      category: item.category || '',
-      gender: item.gender || '',
-      color: item.color || '',
-      size: item.size || '',
-      season: item.season || '',
-      quantity: Number(item.qty || 0),
+  const productsMap = new Map();
 
-      description: item.description || '',
+  for (const item of records) {
+    const sku = clean(item.cod);
+    const designer = clean(item.designer);
+    const color = clean(item.color);
+    const size = cleanSize(item.size);
 
-      cost_price: Number(item['cost price'] || 0),
+    if (!sku || !designer) continue;
 
-      retail_price: Number(item['retail price'] || 0),
+    const key = buildProductKey(item);
 
-      discounted_price: Number(item['discounted price'] || 0),
+    const images = [
+      clean(item.foto1),
+      clean(item.foto2),
+      clean(item['foto 3'])
+    ].filter(Boolean);
 
-      images: [
-        item.foto1,
-        item.foto2,
-        item['foto 3']
-      ].filter(Boolean)
-    };
-  });
+    if (!productsMap.has(key)) {
+      productsMap.set(key, {
+        supplier: 'Julian Fashion',
+        product_key: key,
+        handle: `${designer}-${sku}-${color}`
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, ''),
+
+        title: `${designer} ${sku}`,
+        vendor: designer,
+        product_type: clean(item.category),
+        gender: clean(item.gender),
+        category: clean(item.category),
+        color,
+        season: clean(item.season),
+        description: clean(item.description),
+
+        tags: [
+          'supplier:julian-fashion',
+          `designer:${designer}`,
+          `gender:${clean(item.gender)}`,
+          `category:${clean(item.category)}`,
+          `season:${clean(item.season)}`
+        ].filter(Boolean),
+
+        images: [],
+        variants: []
+      });
+    }
+
+    const product = productsMap.get(key);
+
+    for (const image of images) {
+      if (!product.images.includes(image)) {
+        product.images.push(image);
+      }
+    }
+
+    const variantSku = `${sku}-${size || 'OS'}`.replace(/\s+/g, '-');
+
+    product.variants.push({
+      option1_name: 'Size',
+      option1_value: size || 'One Size',
+      sku: variantSku,
+      barcode: '',
+      inventory_quantity: toNumber(item.qty),
+      cost_price: toNumber(item['cost price']),
+      retail_price: toNumber(item['retail price']),
+      price: toNumber(item['discounted price']) || toNumber(item['retail price']),
+      currency: 'EUR'
+    });
+  }
+
+  const shopifyProducts = Array.from(productsMap.values());
 
   fs.writeFileSync(
-    'julian-normalized.json',
-    JSON.stringify(normalized, null, 2)
+    'julian-shopify-products.json',
+    JSON.stringify(shopifyProducts, null, 2)
   );
 
-  console.log('Normalized JSON saved');
+  console.log('Shopify-ready products:', shopifyProducts.length);
 
-  console.log('First 3 products:');
-
-  console.log(
-    JSON.stringify(normalized.slice(0, 3), null, 2)
+  const totalVariants = shopifyProducts.reduce(
+    (sum, product) => sum + product.variants.length,
+    0
   );
+
+  console.log('Total variants:', totalVariants);
+
+  console.log('First Shopify-ready product:');
+  console.log(JSON.stringify(shopifyProducts[0], null, 2));
 
   await browser.close();
 }
 
 run()
   .then(() => {
-    console.log('Julian normalization completed');
+    console.log('Julian Shopify grouping completed');
     setInterval(() => {}, 1000);
   })
   .catch((error) => {
-    console.error('Normalization failed:', error);
+    console.error('Grouping failed:', error);
     process.exit(1);
   });
