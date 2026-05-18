@@ -30,49 +30,159 @@ function makeHash(value) {
     .digest('hex');
 }
 
-function buildProduct(row) {
-  const supplierProductCode = cleanText(row.cod);
+function extractValue(text, label) {
+  const regex = new RegExp(`${label}\\s*:?\\s*([^\\n\\r]+)`, 'i');
+  const match = text.match(regex);
+  return match ? cleanText(match[1]) : null;
+}
 
-  const supplierRetailPrice = toNumber(row['retail price']);
-  const supplierFinalPrice = toNumber(row['discounted price']);
-  const supplierPriceIncVat = toNumber(row['cost price']);
-
-  const discountPercent =
-    supplierRetailPrice && supplierFinalPrice && supplierRetailPrice > supplierFinalPrice
-      ? Math.round(((supplierRetailPrice - supplierFinalPrice) / supplierRetailPrice) * 100)
-      : null;
-
-  const seasonRaw = cleanText(row.season);
-
-  const isSale =
-    seasonRaw?.toLowerCase().includes('sale') ||
-    Boolean(discountPercent && discountPercent > 0);
+function extractFinalPrice(text) {
+  const match = text.match(/FINAL PRICE\s*-?\s*(\d+)%?\s*€?\s*([\d.,]+)/i);
+  if (!match) return null;
 
   return {
+    discount_percent: toNumber(match[1]),
+    final_price: toNumber(match[2])
+  };
+}
+
+function extractRetailPrice(text) {
+  const match = text.match(/RETAIL PRICE\s*€?\s*([\d.,]+)/i);
+  return match ? toNumber(match[1]) : null;
+}
+
+async function scrapeLiveProduct(page, row) {
+  const supplierProductCode = cleanText(row.cod);
+  const loginUrl = new URL(process.env.JULIAN_LOGIN_URL);
+  const baseUrl = `${loginUrl.protocol}//${loginUrl.host}`;
+
+  const searchUrl =
+    `${baseUrl}/index.php?controller=search&orderby=position&orderway=desc&s=${encodeURIComponent(supplierProductCode)}&submit_search=`;
+
+  console.log('Opening live product search:', supplierProductCode);
+
+  await page.goto(searchUrl, {
+    waitUntil: 'networkidle',
+    timeout: 60000
+  });
+
+  await page.waitForTimeout(2000);
+
+  const pageText = await page.locator('body').innerText({ timeout: 30000 });
+
+  const retailFromPage = extractRetailPrice(pageText);
+  const finalFromPage = extractFinalPrice(pageText);
+
+  const composition = extractValue(pageText, 'COMPOSITION');
+  const madeIn = extractValue(pageText, 'MADE IN');
+  const sizeAndFit = extractValue(pageText, 'SIZE AND FIT');
+  const type = extractValue(pageText, 'TYPE');
+  const color = extractValue(pageText, 'COLOR');
+  const gender = extractValue(pageText, 'GENDER');
+  const season = extractValue(pageText, 'SEASON');
+  const spu = extractValue(pageText, 'SPU');
+
+  const images = await page.$$eval('img', imgs =>
+    imgs
+      .map(img => img.src)
+      .filter(Boolean)
+      .filter(src => src.includes('julianfashionstorage') || src.includes('/img/'))
+  );
+
+  const uniqueImages = [...new Set(images)].filter(src =>
+    src.toLowerCase().includes(String(supplierProductCode).toLowerCase())
+  );
+
+  const sizes = await page.$$eval('tr', rows =>
+    rows
+      .map(row => row.innerText)
+      .filter(Boolean)
+  ).catch(() => []);
+
+  const detectedVariants = [];
+
+  for (const rowText of sizes) {
+    const clean = rowText.replace(/\s+/g, ' ').trim();
+
+    const sizeMatch = clean.match(/^([A-Z0-9./-]+)\s+/i);
+    const qtyMatch = clean.match(/(\d+)\s*pc/i);
+
+    if (sizeMatch || qtyMatch) {
+      detectedVariants.push({
+        supplier_size: sizeMatch ? sizeMatch[1] : null,
+        stock_quantity: qtyMatch ? Number(qtyMatch[1]) : null,
+        raw_text: clean
+      });
+    }
+  }
+
+  return {
+    product_url: page.url(),
+    page_text: pageText,
+
+    spu,
+    composition_raw: composition,
+    made_in_raw: madeIn,
+    size_and_fit_raw: sizeAndFit,
+    type_raw: type,
+    color_raw: color,
+    gender_raw: gender,
+    season_raw: season,
+
+    supplier_retail_price: retailFromPage,
+    supplier_final_price: finalFromPage?.final_price || null,
+    discount_percent: finalFromPage?.discount_percent || null,
+
+    images: uniqueImages,
+    variants: detectedVariants
+  };
+}
+
+function buildProduct(row, live) {
+  const supplierProductCode = cleanText(row.cod);
+
+  const csvRetailPrice = toNumber(row['retail price']);
+  const csvFinalPrice = toNumber(row['discounted price']);
+  const csvSupplierPriceIncVat = toNumber(row['cost price']);
+
+  const supplierRetailPrice = live.supplier_retail_price || csvRetailPrice;
+  const supplierFinalPrice = live.supplier_final_price || csvFinalPrice;
+
+  const discountPercent =
+    live.discount_percent ||
+    (
+      supplierRetailPrice && supplierFinalPrice && supplierRetailPrice > supplierFinalPrice
+        ? Math.round(((supplierRetailPrice - supplierFinalPrice) / supplierRetailPrice) * 100)
+        : null
+    );
+
+  const seasonRaw = live.season_raw || cleanText(row.season);
+
+  const product = {
     supplier_name: SUPPLIER_NAME,
 
     supplier_product_id: null,
     supplier_product_code: supplierProductCode,
-    supplier_sku: null,
+    supplier_sku: live.spu || null,
 
     brand_raw: cleanText(row.designer),
     title_raw: cleanText(`${cleanText(row.designer) || ''} ${supplierProductCode || ''}`),
     description_raw: cleanText(row.description),
 
-    gender_raw: cleanText(row.gender),
+    gender_raw: live.gender_raw || cleanText(row.gender),
     category_raw: cleanText(row.category),
     subcategory_raw: null,
-    type_raw: null,
-    color_raw: cleanText(row.color),
+    type_raw: live.type_raw || null,
+    color_raw: live.color_raw || cleanText(row.color),
     season_raw: seasonRaw,
 
-    composition_raw: null,
-    made_in_raw: null,
-    size_and_fit_raw: null,
+    composition_raw: live.composition_raw || null,
+    made_in_raw: live.made_in_raw || null,
+    size_and_fit_raw: live.size_and_fit_raw || null,
 
     supplier_retail_price: supplierRetailPrice,
     supplier_final_price: supplierFinalPrice,
-    supplier_price_inc_vat: supplierPriceIncVat,
+    supplier_price_inc_vat: csvSupplierPriceIncVat,
     supplier_price_ex_vat: null,
     vat_percent: null,
     vat_amount: null,
@@ -80,15 +190,20 @@ function buildProduct(row) {
     currency: 'EUR',
     discount_percent: discountPercent,
 
-    is_sale: isSale,
+    is_sale:
+      seasonRaw?.toLowerCase().includes('sale') ||
+      Boolean(discountPercent && discountPercent > 0),
 
-    product_url: null,
+    product_url: live.product_url || null,
     listing_url: null,
 
     product_key: `${SUPPLIER_SLUG}:${supplierProductCode}`,
-    product_hash: makeHash(row),
+    product_hash: makeHash({ row, live }),
 
-    raw_json: row,
+    raw_json: {
+      csv: row,
+      live
+    },
 
     scrape_status: 'new',
     is_active: true,
@@ -96,65 +211,82 @@ function buildProduct(row) {
 
     scraped_at: new Date().toISOString()
   };
+
+  return product;
 }
 
-function buildVariants(row) {
+function buildVariants(row, live) {
   const supplierProductCode = cleanText(row.cod);
-  const supplierSize = cleanText(row.size);
-  const quantity = toNumber(row.qty);
 
-  if (!supplierSize) return [];
+  const liveVariants = Array.isArray(live.variants) && live.variants.length
+    ? live.variants
+    : [
+        {
+          supplier_size: cleanText(row.size),
+          stock_quantity: toNumber(row.qty),
+          raw_text: null
+        }
+      ];
 
-  return [
-    {
+  return liveVariants
+    .filter(variant => variant.supplier_size)
+    .map(variant => ({
       supplier_name: SUPPLIER_NAME,
       supplier_product_code: supplierProductCode,
-      supplier_sku: null,
+      supplier_sku: live.spu || null,
       supplier_variant_code: null,
 
-      supplier_size: supplierSize,
-      stock_quantity: quantity,
-      is_available: quantity === null ? null : quantity > 0,
+      supplier_size: variant.supplier_size,
+      stock_quantity: variant.stock_quantity,
+      is_available:
+        variant.stock_quantity === null || variant.stock_quantity === undefined
+          ? null
+          : variant.stock_quantity > 0,
 
-      retail_price: toNumber(row['retail price']),
+      retail_price: live.supplier_retail_price || toNumber(row['retail price']),
       supplier_price: toNumber(row['cost price']),
-      final_price: toNumber(row['discounted price']),
+      final_price: live.supplier_final_price || toNumber(row['discounted price']),
       currency: 'EUR',
-      discount_percent: null,
+      discount_percent: live.discount_percent || null,
 
-      raw_variant_json: row,
-      scraped_at: new Date().toISOString()
-    }
-  ];
-}
-
-function buildImages(row) {
-  const supplierProductCode = cleanText(row.cod);
-
-  return [
-    { url: cleanText(row.foto1), column: 'foto1' },
-    { url: cleanText(row.foto2), column: 'foto2' },
-    { url: cleanText(row['foto 3']), column: 'foto 3' }
-  ]
-    .filter(image => Boolean(image.url))
-    .map((image, index) => ({
-      supplier_name: SUPPLIER_NAME,
-      supplier_product_code: supplierProductCode,
-
-      image_url: image.url,
-      image_position: index + 1,
-      image_type: index === 0 ? 'main' : 'gallery',
-      is_main: index === 0,
-      is_valid: null,
-
-      raw_image_json: {
-        image_url: image.url,
-        source_column: image.column
+      raw_variant_json: {
+        csv: row,
+        live_variant: variant
       },
 
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      scraped_at: new Date().toISOString()
     }));
+}
+
+function buildImages(row, live) {
+  const supplierProductCode = cleanText(row.cod);
+
+  const imageSources = live.images && live.images.length
+    ? live.images
+    : [
+        cleanText(row.foto1),
+        cleanText(row.foto2),
+        cleanText(row['foto 3'])
+      ].filter(Boolean);
+
+  return imageSources.map((imageUrl, index) => ({
+    supplier_name: SUPPLIER_NAME,
+    supplier_product_code: supplierProductCode,
+
+    image_url: imageUrl,
+    image_position: index + 1,
+    image_type: index === 0 ? 'main' : 'gallery',
+    is_main: index === 0,
+    is_valid: null,
+
+    raw_image_json: {
+      image_url: imageUrl,
+      source: live.images && live.images.length ? 'live_product_page' : 'csv'
+    },
+
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  }));
 }
 
 async function run() {
@@ -219,20 +351,59 @@ async function run() {
 
     console.log('Parsed rows:', records.length);
 
-    const limit = Number(process.env.PRODUCT_LIMIT || 10);
+    const limit = Number(process.env.PRODUCT_LIMIT || 3);
     const selectedRecords = records.slice(0, limit);
 
-    const products = selectedRecords.map(buildProduct);
-    const variants = selectedRecords.flatMap(buildVariants);
-    const images = selectedRecords.flatMap(buildImages);
+    const products = [];
+    const variants = [];
+    const images = [];
+
+    for (const row of selectedRecords) {
+      const supplierProductCode = cleanText(row.cod);
+
+      try {
+        const live = await scrapeLiveProduct(page, row);
+
+        console.log('Live product scraped:', supplierProductCode);
+        console.log('Composition:', live.composition_raw);
+        console.log('Made in:', live.made_in_raw);
+        console.log('Retail:', live.supplier_retail_price);
+        console.log('Final:', live.supplier_final_price);
+        console.log('Discount:', live.discount_percent);
+        console.log('Images:', live.images.length);
+        console.log('Variants:', live.variants.length);
+
+        products.push(buildProduct(row, live));
+        variants.push(...buildVariants(row, live));
+        images.push(...buildImages(row, live));
+      } catch (error) {
+        console.error('Live scrape failed for:', supplierProductCode, error.message);
+
+        const fallbackLive = {
+          product_url: null,
+          composition_raw: null,
+          made_in_raw: null,
+          size_and_fit_raw: null,
+          type_raw: null,
+          color_raw: null,
+          gender_raw: null,
+          season_raw: null,
+          supplier_retail_price: null,
+          supplier_final_price: null,
+          discount_percent: null,
+          images: [],
+          variants: []
+        };
+
+        products.push(buildProduct(row, fallbackLive));
+        variants.push(...buildVariants(row, fallbackLive));
+        images.push(...buildImages(row, fallbackLive));
+      }
+    }
 
     console.log('Prepared products:', products.length);
     console.log('Prepared variants:', variants.length);
     console.log('Prepared images:', images.length);
-
-    console.log('First product preview:', JSON.stringify(products[0], null, 2));
-    console.log('First variant preview:', JSON.stringify(variants[0], null, 2));
-    console.log('First image preview:', JSON.stringify(images[0], null, 2));
 
     if (!process.env.N8N_WEBHOOK_URL) {
       throw new Error('N8N_WEBHOOK_URL is missing');
@@ -245,7 +416,7 @@ async function run() {
       {
         supplier_name: SUPPLIER_NAME,
         supplier_slug: SUPPLIER_SLUG,
-        source: 'julian_csv_export',
+        source: 'julian_live_product_page',
         scraped_at: new Date().toISOString(),
         products,
         variants,
