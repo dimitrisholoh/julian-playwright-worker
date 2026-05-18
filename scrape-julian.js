@@ -184,7 +184,12 @@ async function scrapeLiveProduct(page, row) {
 }
 
 function buildProduct(row, live) {
-  const supplierProductCode = cleanText(row.cod);
+  const supplierProductCode =
+  cleanText(row.sku) ||
+  cleanText(row.cod) ||
+  cleanText(row.reference);
+
+console.log('Using search code:', supplierProductCode);
 
   const csvRetailPrice = toNumber(row['retail price']);
   const csvFinalPrice = toNumber(row['discounted price']);
