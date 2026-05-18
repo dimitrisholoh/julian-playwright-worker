@@ -226,10 +226,6 @@ function buildProduct(row, live) {
 
     supplier_retail_price: supplierRetailPrice,
     supplier_final_price: supplierFinalPrice,
-    supplier_price_inc_vat: csvSupplierPriceIncVat,
-    supplier_price_ex_vat: null,
-    vat_percent: null,
-    vat_amount: null,
 
     currency: 'EUR',
     supplier_discount_percent: discountPercent,
