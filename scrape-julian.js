@@ -142,77 +142,67 @@ function buildProduct(row, live) {
   const supplierProductCode = cleanText(row.cod);
 
   const csvRetailPrice = toNumber(row['retail price']);
-  const csvFinalPrice = toNumber(row['discounted price']);
-  const csvSupplierPriceIncVat = toNumber(row['cost price']);
+  const csvSupplierPrice = toNumber(row['discounted price']) || toNumber(row['cost price']);
 
-  const supplierRetailPrice = live.supplier_retail_price || csvRetailPrice;
-  const supplierFinalPrice = live.supplier_final_price || csvFinalPrice;
+  const retailPrice = live.supplier_retail_price || csvRetailPrice;
+  const supplierPrice = live.supplier_final_price || csvSupplierPrice;
 
-  const discountPercent =
+  const supplierDiscountPercent =
     live.discount_percent ||
     (
-      supplierRetailPrice && supplierFinalPrice && supplierRetailPrice > supplierFinalPrice
-        ? Math.round(((supplierRetailPrice - supplierFinalPrice) / supplierRetailPrice) * 100)
+      retailPrice && supplierPrice && retailPrice > supplierPrice
+        ? Math.round(((retailPrice - supplierPrice) / retailPrice) * 100)
         : null
     );
 
   const seasonRaw = live.season_raw || cleanText(row.season);
 
-  const product = {
+  return {
     supplier_name: SUPPLIER_NAME,
-
-    supplier_product_id: null,
-    supplier_product_code: supplierProductCode,
     supplier_sku: live.spu || null,
+    supplier_product_code: supplierProductCode,
 
     brand_raw: cleanText(row.designer),
     title_raw: cleanText(`${cleanText(row.designer) || ''} ${supplierProductCode || ''}`),
     description_raw: cleanText(row.description),
 
+    composition_raw: live.composition_raw || null,
+    color_raw: live.color_raw || cleanText(row.color),
     gender_raw: live.gender_raw || cleanText(row.gender),
     category_raw: cleanText(row.category),
     subcategory_raw: null,
     type_raw: live.type_raw || null,
-    color_raw: live.color_raw || cleanText(row.color),
+    sizes_raw: row.size ? [cleanText(row.size)] : null,
+    made_in_raw: live.made_in_raw || null,
     season_raw: seasonRaw,
 
-    composition_raw: live.composition_raw || null,
-    made_in_raw: live.made_in_raw || null,
-    size_and_fit_raw: live.size_and_fit_raw || null,
-
-    supplier_retail_price: supplierRetailPrice,
-    supplier_final_price: supplierFinalPrice,
-    supplier_price_inc_vat: csvSupplierPriceIncVat,
-    supplier_price_ex_vat: null,
-    vat_percent: null,
-    vat_amount: null,
-
+    supplier_price: supplierPrice,
+    retail_price: retailPrice,
     currency: 'EUR',
-    discount_percent: discountPercent,
+    supplier_discount_percent: supplierDiscountPercent,
 
     is_sale:
       seasonRaw?.toLowerCase().includes('sale') ||
-      Boolean(discountPercent && discountPercent > 0),
+      Boolean(supplierDiscountPercent && supplierDiscountPercent > 0),
 
-    product_url: live.product_url || null,
-    listing_url: null,
-
-    product_key: `${SUPPLIER_SLUG}:${supplierProductCode}`,
-    product_hash: makeHash({ row, live }),
+    is_archived: false,
+    is_active: true,
+    scrape_status: 'new',
 
     raw_json: {
       csv: row,
       live
     },
 
-    scrape_status: 'new',
-    is_active: true,
-    is_archived: false,
+    raw_hash: makeHash(row),
+    product_hash: makeHash({ row, live }),
+
+    supplier_product_url: live.product_url || null,
+    listing_url: null,
+    product_key: `${SUPPLIER_SLUG}:${supplierProductCode}`,
 
     scraped_at: new Date().toISOString()
   };
-
-  return product;
 }
 
 function buildVariants(row, live) {
