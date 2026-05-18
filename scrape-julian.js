@@ -184,8 +184,17 @@ async function scrapeLiveProduct(page, row) {
 }
 
 function buildProduct(row, live) {
-  const supplierProductCode =
+  const imageCode =
+  cleanText(row.foto1)
+    ?.split('/jbc/')
+    ?.pop()
+    ?.split('_')
+    ?.[0];
+
+const supplierProductCode =
+  imageCode ||
   cleanText(row.sku) ||
+  cleanText(row.spu) ||
   cleanText(row.cod) ||
   cleanText(row.reference);
 
