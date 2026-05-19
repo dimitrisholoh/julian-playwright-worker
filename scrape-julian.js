@@ -125,7 +125,7 @@ async function login(page) {
 
   console.log('Credentials filled');
 
-  await page.click('button[type="submit"]');
+  await page.keyboard.press('Enter');
   await page.waitForLoadState('networkidle');
 
   console.log('Login completed');
