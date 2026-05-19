@@ -37,73 +37,77 @@ function makeHash(value) {
     .digest('hex');
 }
 
-function extractRetailPrice(text) {
-  const match = text.match(/RETAIL PRICE\s*€?\s*([\d.,]+)/i);
-  return match ? toNumber(match[1]) : null;
+function getFeature(product, name) {
+  const features = product.grouped_features || {};
+  return cleanText(features[name]?.value || null);
 }
 
-function extractFinalPrice(text) {
-  const match = text.match(/FINAL PRICE\s*-?\s*\d*%?\s*€?\s*([\d.,]+)/i);
-  return match ? toNumber(match[1]) : null;
-}
+function normalizeProduct(product) {
+  const productCode =
+    product.reference ||
+    product.spu ||
+    product.id_product ||
+    product.id;
 
-function extractDiscountPercent(text) {
-  const match = text.match(/FINAL PRICE\s*-?(\d+)%/i);
-  return match ? toNumber(match[1]) : null;
-}
+  const retailPrice = toNumber(
+    product.price_without_reduction ||
+    product.regular_price ||
+    product.wholesale_price
+  );
 
-function detectProductBlocks(text) {
-  const lines = text
-    .split('\n')
-    .map(line => cleanText(line))
-    .filter(Boolean);
+  const finalPrice = toNumber(
+    product.price_amount ||
+    product.price
+  );
 
-  const products = [];
+  const discountPercent = toNumber(
+    product.discount_percentage
+  );
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+  return {
+    supplier_name: SUPPLIER_NAME,
+    supplier_slug: SUPPLIER_SLUG,
 
-    if (/RETAIL PRICE/i.test(line)) {
-      const block = lines.slice(Math.max(0, i - 8), i + 8);
+    supplier_sku: null,
+    supplier_product_code: cleanText(productCode),
 
-      const brand =
-        block.find(x =>
-          /^[A-Z0-9 .,&'-]{3,}$/.test(x) &&
-          !/RETAIL PRICE|FINAL PRICE|SIZE|QTY|STOCK|ADD TO CART|TAKE ALL/i.test(x) &&
-          !/^\d+$/.test(x) &&
-          !/^\d+\s?pc\.?$/i.test(x)
-        ) || null;
+    brand_raw: null,
+    title_raw: cleanText(product.name),
 
-      const code =
-        block.find(x =>
-          /^[A-Z0-9]{8,}$/i.test(x) &&
-          !/^\d+$/.test(x)
-        ) || null;
+    description_raw: cleanText(product.description),
 
-      const season =
-        block.find(x =>
-          /Spring Summer|Fall Winter|Sale/i.test(x)
-        ) || null;
+    gender_raw: getFeature(product, 'gender'),
+    category_raw: cleanText(product.category_name || product.category),
+    subcategory_raw: null,
+    type_raw: getFeature(product, 'type'),
+    color_raw: getFeature(product, 'color'),
+    season_raw: getFeature(product, 'season'),
 
-      const retailPrice = extractRetailPrice(block.join('\n'));
-      const finalPrice = extractFinalPrice(block.join('\n'));
-      const discountPercent = extractDiscountPercent(block.join('\n'));
+    composition_raw: getFeature(product, 'composition'),
+    made_in_raw: getFeature(product, 'made in'),
+    size_and_fit_raw: getFeature(product, 'size and fit'),
 
-      if (code || brand || retailPrice || finalPrice) {
-        products.push({
-          brand,
-          code,
-          season,
-          retailPrice,
-          finalPrice,
-          discountPercent,
-          rawBlock: block
-        });
-      }
-    }
-  }
+    supplier_retail_price: retailPrice,
+    supplier_final_price: finalPrice,
+    supplier_discount_percent: discountPercent,
 
-  return products;
+    currency: 'EUR',
+
+    is_sale: Boolean(product.has_discount || discountPercent),
+
+    supplier_product_url: cleanText(product.link || product.url),
+    listing_url: START_URL,
+
+    product_key: `${SUPPLIER_SLUG}:${cleanText(productCode)}`,
+    product_hash: makeHash(product),
+
+    raw_json: product,
+
+    scrape_status: 'new',
+    is_active: true,
+    is_archived: false,
+    scraped_at: new Date().toISOString()
+  };
 }
 
 async function login(page) {
@@ -143,111 +147,20 @@ async function openListing(page) {
   console.log('Listing opened');
 }
 
-async function scrapeListingProducts(page) {
-  console.log('Scraping products from listing text...');
+async function clickQuickviews(page) {
+  console.log('Clicking quickview buttons...');
 
   const quickButtons = await page.$$('.button-action.quick-view');
 
   console.log('Quick buttons found:', quickButtons.length);
 
-  if (quickButtons.length > 0) {
-    await quickButtons[0].click();
+  const limit = Math.min(quickButtons.length, LIMIT_PRODUCTS);
 
-    console.log('Quickview clicked');
-
-    await page.waitForTimeout(5000);
+  for (let i = 0; i < limit; i++) {
+    await quickButtons[i].click();
+    console.log('Quickview clicked:', i + 1);
+    await page.waitForTimeout(3000);
   }
-
-  const html = await page.content();
-
-console.log(
-  'DEBUG html contains product code:',
-  html.includes('1240672N295')
-);
-
-const idx = html.indexOf('1240672N295');
-
-console.log(
-  'DEBUG product code context:',
-  html.slice(
-    Math.max(0, idx - 1000),
-    idx + 1000
-  )
-);
-
-  const pageText = await page.locator('body').innerText({
-    timeout: 30000
-  });
-
-  console.log('DEBUG body first 3000:', pageText.slice(0, 3000));
-
-  const blocks = detectProductBlocks(pageText);
-
-  console.log('Detected product blocks:', blocks.length);
-
-  const selectedBlocks = blocks.slice(0, LIMIT_PRODUCTS);
-
-  const products = selectedBlocks.map(item => {
-    const productCode =
-      item.code ||
-      `${item.brand || 'unknown'}-${item.retailPrice || Date.now()}`;
-
-    const product = {
-      supplier_name: SUPPLIER_NAME,
-      supplier_slug: SUPPLIER_SLUG,
-
-      supplier_sku: null,
-      supplier_product_code: cleanText(productCode),
-
-      brand_raw: cleanText(item.brand),
-      title_raw: cleanText(
-        [item.brand, item.code].filter(Boolean).join(' ')
-      ),
-
-      description_raw: cleanText(item.rawBlock.join('\n')),
-
-      gender_raw: 'Woman',
-      category_raw: null,
-      subcategory_raw: null,
-      type_raw: null,
-      color_raw: null,
-      season_raw: cleanText(item.season),
-
-      composition_raw: null,
-      made_in_raw: null,
-      size_and_fit_raw: null,
-
-      supplier_retail_price: item.retailPrice,
-      supplier_final_price: item.finalPrice,
-      supplier_discount_percent: item.discountPercent,
-
-      currency: 'EUR',
-
-      is_sale: Boolean(
-        item.discountPercent && item.discountPercent > 0
-      ),
-
-      supplier_product_url: null,
-      listing_url: START_URL,
-
-      product_key: `${SUPPLIER_SLUG}:${cleanText(productCode)}`,
-      product_hash: makeHash(item),
-
-      raw_json: {
-        source: 'listing_text',
-        raw_block: item.rawBlock
-      },
-
-      scrape_status: 'new',
-      is_active: true,
-      is_archived: false,
-      scraped_at: new Date().toISOString()
-    };
-
-    return product;
-  });
-
-  return products;
 }
 
 async function sendWebhook(products) {
@@ -262,7 +175,7 @@ async function sendWebhook(products) {
     {
       supplier_name: SUPPLIER_NAME,
       supplier_slug: SUPPLIER_SLUG,
-      source: 'julian_listing_text_scraper',
+      source: 'julian_quickview_scraper',
       scraped_at: new Date().toISOString(),
       products
     },
@@ -284,129 +197,57 @@ async function run() {
 
   const quickviewProducts = [];
 
-page.on('response', async (response) => {
-  const url = response.url();
+  page.on('response', async (response) => {
+    const url = response.url();
 
-  if (
-    url.includes('controller=product') &&
-    url.includes('action=quickview')
-  ) {
-    try {
-    const json = await response.json();
+    if (
+      url.includes('controller=product') &&
+      url.includes('action=quickview')
+    ) {
+      try {
+        const json = await response.json();
 
-    quickviewProducts.push(json);
+        if (json.product) {
+          quickviewProducts.push(json.product);
 
-    const firstProduct = json.product || {};
-
-    console.log(
-      'Quickview captured:',
-      firstProduct.name || 'NO_NAME',
-      firstProduct.reference || 'NO_REF'
-    );
-  
-  } catch (error) {
-    console.log(
-        'Quickview JSON parse failed:',
-        error.message
-      );
+          console.log(
+            'Quickview captured:',
+            json.product.name || 'NO_NAME',
+            json.product.reference || 'NO_REF'
+          );
+        }
+      } catch (error) {
+        console.log('Quickview JSON parse failed:', error.message);
+      }
     }
-  }
-});
+  });
 
   try {
     await login(page);
     await openListing(page);
-
-    await scrapeListingProducts(page);
+    await clickQuickviews(page);
 
     const products = quickviewProducts
-  .map(item => item.product)
-  .filter(Boolean)
-  .slice(0, LIMIT_PRODUCTS)
-  .map(product => {
-    const features = product.grouped_features || {};
-    const getFeature = name => features[name]?.value || null;
+      .slice(0, LIMIT_PRODUCTS)
+      .map(normalizeProduct);
 
-    const productCode =
-      product.reference ||
-      product.spu ||
-      product.id_product ||
-      product.id;
-
-    return {
-      supplier_name: SUPPLIER_NAME,
-      supplier_slug: SUPPLIER_SLUG,
-
-      supplier_sku: null,
-      supplier_product_code: cleanText(productCode),
-
-      brand_raw: null,
-      title_raw: cleanText(product.name),
-
-      description_raw: cleanText(product.description),
-
-      gender_raw: getFeature('gender'),
-      category_raw: cleanText(product.category_name || product.category),
-      subcategory_raw: null,
-      type_raw: getFeature('type'),
-      color_raw: getFeature('color'),
-      season_raw: getFeature('season'),
-
-      composition_raw: getFeature('composition'),
-      made_in_raw: getFeature('made in'),
-      size_and_fit_raw: getFeature('size and fit'),
-
-      supplier_retail_price: toNumber(
-        product.price_without_reduction || product.regular_price
-      ),
-      supplier_final_price: toNumber(
-        product.price_amount || product.price
-      ),
-      supplier_discount_percent: toNumber(
-        product.discount_percentage
-      ),
-
-      currency: 'EUR',
-
-      is_sale: Boolean(product.has_discount),
-
-      supplier_product_url: cleanText(product.link || product.url),
-      listing_url: START_URL,
-
-      product_key: `${SUPPLIER_SLUG}:${cleanText(productCode)}`,
-      product_hash: makeHash(product),
-
-      raw_json: product,
-
-      scrape_status: 'new',
-      is_active: true,
-      is_archived: false,
-      scraped_at: new Date().toISOString()
-    };
-  });
-    
-    console.log(
-      'Captured quickview responses:',
-      quickviewProducts.length
-    );
-
-if (quickviewProducts.length) {
-  const p = products[0] || {};
-
-  console.log('Quickview captured OK');
-  console.log('Product name:', p.name);
-  console.log('Product reference:', p.reference);
-  console.log('Product price:', p.price);
-  console.log('Product color:', p.color);
-}
-
+    console.log('Captured quickview products:', quickviewProducts.length);
     console.log('Prepared products:', products.length);
 
     if (!products.length) {
       throw new Error('No products prepared');
     }
 
-    console.log('First product preview:', JSON.stringify(products[0], null, 2));
+    console.log('First product:', {
+      title_raw: products[0].title_raw,
+      supplier_product_code: products[0].supplier_product_code,
+      supplier_retail_price: products[0].supplier_retail_price,
+      supplier_final_price: products[0].supplier_final_price,
+      color_raw: products[0].color_raw,
+      composition_raw: products[0].composition_raw,
+      made_in_raw: products[0].made_in_raw,
+      size_and_fit_raw: products[0].size_and_fit_raw
+    });
 
     await sendWebhook(products);
   } finally {
