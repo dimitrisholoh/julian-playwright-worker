@@ -169,8 +169,8 @@ async function scrapeProductPage(page, productUrl) {
       extractValue(pageText, 'SIZE AND FIT') ||
       extractValue(pageText, 'Size and Fit'),
 
-    retail_price: retailPrice,
-    supplier_price: supplierPrice,
+    supplier_retail_price: retailPrice,
+    supplier_final_price: supplierPrice,
     currency: 'EUR',
     supplier_discount_percent: supplierDiscountPercent,
 
@@ -225,6 +225,18 @@ async function run() {
     console.log('Login submitted');
     console.log('Current URL:', page.url());
 
+    console.log('Opening WOMAN category...');
+
+    await page.goto('https://b2bfashion.online/206-woman', {
+      waitUntil: 'domcontentloaded',
+      timeout: 120000
+    });
+
+    await page.waitForTimeout(7000);
+
+    await page.mouse.wheel(0, 5000);
+    await page.waitForTimeout(3000);
+
     console.log('Collecting links after login...');
 
     const links = await collectLinks(page);
@@ -266,8 +278,8 @@ async function run() {
 
         console.log('Product scraped:', product.supplier_product_code);
         console.log('Title:', product.title_raw);
-        console.log('Retail price:', product.retail_price);
-        console.log('Supplier price:', product.supplier_price);
+        console.log('Retail price:', product.supplier_retail_price);
+        console.log('Supplier price:', product.supplier_final_price);
         console.log('Composition:', product.composition_raw);
         console.log('Made in:', product.made_in_raw);
       } catch (error) {
