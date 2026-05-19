@@ -270,6 +270,26 @@ async function run() {
 
   const page = await browser.newPage();
 
+  page.on('response', async (response) => {
+  const url = response.url();
+
+  if (
+    url.includes('controller=product') &&
+    url.includes('action=quickview')
+  ) {
+    try {
+      const json = await response.json();
+
+      console.log(
+        'PRODUCT JSON:',
+        JSON.stringify(json, null, 2)
+      );
+    } catch (e) {
+      console.log('JSON parse error');
+    }
+  }
+});
+
   try {
     await login(page);
     await openListing(page);
