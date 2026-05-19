@@ -318,7 +318,11 @@ page.on('response', async (response) => {
     await login(page);
     await openListing(page);
 
-    const products = await scrapeListingProducts(page);
+    await scrapeListingProducts(page);
+
+const products = quickviewProducts.flatMap(
+  item => item.products || []
+);
 
     console.log(
   'Captured quickview responses:',
