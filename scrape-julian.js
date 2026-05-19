@@ -67,7 +67,7 @@ function isLikelyProductUrl(url) {
   return (
     url.includes('/product/') ||
     url.includes('/products/') ||
-    url.match(/\\/\\d+[-_]/i) ||
+    /\d+[-_]/i.test(url) ||
     url.toLowerCase().includes('product')
   );
 }
