@@ -8,7 +8,7 @@ const LIMIT_PRODUCTS = Number(process.env.LIMIT_PRODUCTS || 3);
 
 const START_URL =
   process.env.JULIAN_START_URL ||
-  'https://b2bfashion.online/206-woman?page=3'
+  'https://b2bfashion.online/';
 
 function cleanText(value) {
   if (value === null || value === undefined) return null;
@@ -135,21 +135,25 @@ async function login(page) {
 async function openListing(page) {
   console.log('Opening listing page...');
 
-  try {
-    await page.goto(START_URL, {
-      waitUntil: 'domcontentloaded',
-      timeout: 120000
-    });
-  } catch (error) {
-    console.log('Listing goto warning:', error.message);
-  }
+  await page.goto('https://b2bfashion.online/', {
+    waitUntil: 'domcontentloaded',
+    timeout: 120000
+  }).catch(e => {
+    console.log('Home goto warning:', e.message);
+  });
 
-  await page.waitForTimeout(10000);
+  await page.waitForTimeout(5000);
 
-  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-  await page.waitForTimeout(10000);
+  await page.getByText('WOMAN', { exact: true }).click();
+
+  await page.waitForTimeout(30000);
+
+  await page.mouse.wheel(0, 10000);
+
+  await page.waitForTimeout(5000);
 
   console.log('Listing opened');
+  console.log('Current listing URL:', page.url());
 }
 
 async function clickQuickviews(page) {
