@@ -154,6 +154,28 @@ async function openListing(page) {
 
 async function clickQuickviews(page) {
   console.log('Clicking quickview buttons...');
+  
+  console.log('Current listing URL:', page.url());
+
+  console.log(
+    'Body text preview:',
+  (await page.locator('body').innerText()).slice(0, 1000)
+  );
+
+  console.log(
+    'Quick view text exists:',
+    (await page.locator('body').innerText()).includes('Quick view')
+  );
+
+  console.log(
+    'Product miniature count:',
+    await page.locator('.product-miniature').count()
+  );
+
+  console.log(
+    'Any button-action count:',
+    await page.locator('.button-action').count()
+  );
 
   await page.waitForTimeout(10000);
 
