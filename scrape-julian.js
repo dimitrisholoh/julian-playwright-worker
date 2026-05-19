@@ -70,26 +70,34 @@ async function scrapeLiveProduct(page, row) {
 
   await page.waitForTimeout(3000);
 
-  const productLink = page.locator('a.product_img_link').first();
+  const productLink = page
+  .locator('a[href*="/product/"]')
+  .first();
 
-  if (!(await productLink.count())) {
-    console.log('No product found:', supplierProductCode);
-    return {};
-  }
+const productCount = await productLink.count();
 
-  const href = await productLink.getAttribute('href');
+console.log('Detected product links:', productCount);
 
-  if (!href) {
-    console.log('No href found:', supplierProductCode);
-    return {};
-  }
+if (!productCount) {
+  console.log('No product found:', supplierProductCode);
+  return {};
+}
 
-  console.log('Opening product page:', href);
+ const href = await productLink.getAttribute('href');
 
-  await page.goto(href, {
-    waitUntil: 'domcontentloaded',
-    timeout: 120000
-  });
+console.log('Detected href:', href);
+
+if (!href) {
+  console.log('No href found:', supplierProductCode);
+  return {};
+}
+
+console.log('Opening product page:', href);
+
+await page.goto(href, {
+  waitUntil: 'domcontentloaded',
+  timeout: 120000
+});
 
   await page.waitForTimeout(5000);
 
