@@ -4,7 +4,6 @@ const crypto = require('crypto');
 
 const SUPPLIER_NAME = 'Julian Fashion Srl';
 const SUPPLIER_SLUG = 'julian-fashion';
-
 const LIMIT_PRODUCTS = Number(process.env.LIMIT_PRODUCTS || 3);
 
 const START_URL =
@@ -13,11 +12,7 @@ const START_URL =
 
 function cleanText(value) {
   if (value === null || value === undefined) return null;
-
-  const cleaned = String(value)
-    .replace(/\s+/g, ' ')
-    .trim();
-
+  const cleaned = String(value).replace(/\s+/g, ' ').trim();
   return cleaned || null;
 }
 
@@ -32,10 +27,7 @@ function toNumber(value) {
     .trim();
 
   const number = Number(cleaned);
-
-  return Number.isFinite(number)
-    ? number
-    : null;
+  return Number.isFinite(number) ? number : null;
 }
 
 function makeHash(value) {
@@ -45,68 +37,91 @@ function makeHash(value) {
     .digest('hex');
 }
 
-function extractValue(text, label) {
-  if (!text) return null;
-
-  const regex = new RegExp(
-    `${label}\\s*:?\\s*([^\\n]+)`,
-    'i'
-  );
-
-  const match = text.match(regex);
-
-  return match
-    ? cleanText(match[1])
-    : null;
-}
-
 function extractRetailPrice(text) {
-  const match = text.match(
-    /RETAIL PRICE\s*€?\s*([\d.,]+)/i
-  );
-
-  return match
-    ? toNumber(match[1])
-    : null;
+  const match = text.match(/RETAIL PRICE\s*€?\s*([\d.,]+)/i);
+  return match ? toNumber(match[1]) : null;
 }
 
 function extractFinalPrice(text) {
-  const match = text.match(
-    /FINAL PRICE\s*-?\s*\d*%?\s*€?\s*([\d.,]+)/i
-  );
+  const match = text.match(/FINAL PRICE\s*-?\s*\d*%?\s*€?\s*([\d.,]+)/i);
+  return match ? toNumber(match[1]) : null;
+}
 
-  return match
-    ? toNumber(match[1])
-    : null;
+function extractDiscountPercent(text) {
+  const match = text.match(/FINAL PRICE\s*-?(\d+)%/i);
+  return match ? toNumber(match[1]) : null;
+}
+
+function detectProductBlocks(text) {
+  const lines = text
+    .split('\n')
+    .map(line => cleanText(line))
+    .filter(Boolean);
+
+  const products = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    if (/RETAIL PRICE/i.test(line)) {
+      const block = lines.slice(Math.max(0, i - 8), i + 8);
+
+      const brand =
+        block.find(x =>
+          /^[A-Z0-9 .,&'-]{3,}$/.test(x) &&
+          !/RETAIL PRICE|FINAL PRICE|SIZE|QTY|STOCK|ADD TO CART|TAKE ALL/i.test(x) &&
+          !/^\d+$/.test(x) &&
+          !/^\d+\s?pc\.?$/i.test(x)
+        ) || null;
+
+      const code =
+        block.find(x =>
+          /^[A-Z0-9]{8,}$/i.test(x) &&
+          !/^\d+$/.test(x)
+        ) || null;
+
+      const season =
+        block.find(x =>
+          /Spring Summer|Fall Winter|Sale/i.test(x)
+        ) || null;
+
+      const retailPrice = extractRetailPrice(block.join('\n'));
+      const finalPrice = extractFinalPrice(block.join('\n'));
+      const discountPercent = extractDiscountPercent(block.join('\n'));
+
+      if (code || brand || retailPrice || finalPrice) {
+        products.push({
+          brand,
+          code,
+          season,
+          retailPrice,
+          finalPrice,
+          discountPercent,
+          rawBlock: block
+        });
+      }
+    }
+  }
+
+  return products;
 }
 
 async function login(page) {
   console.log('Opening Julian login page...');
 
-  await page.goto(
-    process.env.JULIAN_LOGIN_URL,
-    {
-      waitUntil: 'networkidle',
-      timeout: 120000
-    }
-  );
+  await page.goto(process.env.JULIAN_LOGIN_URL, {
+    waitUntil: 'networkidle',
+    timeout: 120000
+  });
 
   console.log('Login page loaded');
 
-  await page.fill(
-    'input[type="email"]',
-    process.env.JULIAN_EMAIL
-  );
-
-  await page.fill(
-    'input[type="password"]',
-    process.env.JULIAN_PASSWORD
-  );
+  await page.fill('input[type="email"]', process.env.JULIAN_EMAIL);
+  await page.fill('input[type="password"]', process.env.JULIAN_PASSWORD);
 
   console.log('Credentials filled');
 
   await page.click('button[type="submit"]');
-
   await page.waitForLoadState('networkidle');
 
   console.log('Login completed');
@@ -121,468 +136,149 @@ async function openListing(page) {
     timeout: 120000
   });
 
-  await page.waitForTimeout(8000);
-
-  await page.mouse.wheel(0, 8000);
-
-  await page.waitForTimeout(4000);
+  await page.waitForTimeout(15000);
+  await page.mouse.wheel(0, 10000);
+  await page.waitForTimeout(5000);
 
   console.log('Listing opened');
 }
 
-async function collectProductLinks(page) {
-  console.log(
-    'Collecting product links from product cards...'
-  );
+async function scrapeListingProducts(page) {
+  console.log('Scraping products from listing text...');
 
-  const links = await page.$$eval(
-    'a',
-    elements =>
-      elements
-        .map(element => {
-          return (
-            element.href ||
-            element.getAttribute('href') ||
-            null
-          );
-        })
-        .filter(Boolean)
-  );
-
-  const cleaned = links.filter(link => {
-    const url = link.toLowerCase();
-
-    if (
-      url.includes('javascript:') ||
-      url.includes('#') ||
-      url.includes('login') ||
-      url.includes('cart') ||
-      url.includes('my-account') ||
-      url.includes('content/') ||
-      url.includes('promo') ||
-      url.includes('new-products') ||
-      url.includes('submitcurrency') ||
-      url.includes('controller=')
-    ) {
-      return false;
-    }
-
-    return (
-      url.includes('.html') ||
-      /\/\d{5,}/i.test(url)
-    );
+  const pageText = await page.locator('body').innerText({
+    timeout: 30000
   });
 
-  const uniqueLinks = [
-    ...new Set(cleaned)
-  ];
+  console.log('DEBUG body first 3000:', pageText.slice(0, 3000));
 
-  console.log(
-    'Detected product links:',
-    uniqueLinks.length
-  );
+  const blocks = detectProductBlocks(pageText);
 
-  console.log(
-    'First product links:',
-    JSON.stringify(
-      uniqueLinks.slice(0, 20),
-      null,
-      2
-    )
-  );
+  console.log('Detected product blocks:', blocks.length);
 
-  return uniqueLinks;
-}
+  const selectedBlocks = blocks.slice(0, LIMIT_PRODUCTS);
 
-  const title =
-    await page
-      .locator('h1')
-      .first()
-      .innerText()
-      .catch(() => null);
+  const products = selectedBlocks.map(item => {
+    const productCode =
+      item.code ||
+      `${item.brand || 'unknown'}-${item.retailPrice || Date.now()}`;
 
-  const brand =
-    extractValue(pageText, 'BRAND') ||
-    extractValue(pageText, 'DESIGNER') ||
-    extractValue(pageText, 'Designer');
+    const product = {
+      supplier_name: SUPPLIER_NAME,
+      supplier_slug: SUPPLIER_SLUG,
 
-  const supplierProductCode =
-    extractValue(pageText, 'SPU') ||
-    extractValue(pageText, 'SKU') ||
-    extractValue(pageText, 'CODE') ||
-    productUrl
-      .split('/')
-      .filter(Boolean)
-      .pop();
+      supplier_sku: null,
+      supplier_product_code: cleanText(productCode),
 
-  const retailPrice =
-    extractRetailPrice(pageText);
-
-  const supplierPrice =
-    extractFinalPrice(pageText);
-
-  let supplierDiscountPercent =
-    null;
-
-  if (
-    retailPrice &&
-    supplierPrice &&
-    retailPrice > supplierPrice
-  ) {
-    supplierDiscountPercent =
-      Math.round(
-        (
-          (
-            retailPrice -
-            supplierPrice
-          ) /
-          retailPrice
-        ) * 100
-      );
-  }
-
-  const images =
-    await page.$$eval(
-      'img',
-      imgs =>
-        imgs
-          .map(img => img.src)
-          .filter(Boolean)
-          .filter(src =>
-            src.includes(
-              'julianfashionstorage'
-            ) ||
-            src.includes('/img/') ||
-            src.includes(
-              'blob.core.windows.net'
-            )
-          )
-    );
-
-  const uniqueImages = [
-    ...new Set(images)
-  ];
-
-  const product = {
-    supplier_name:
-      SUPPLIER_NAME,
-
-    supplier_slug:
-      SUPPLIER_SLUG,
-
-    supplier_sku: null,
-
-    supplier_product_code:
-      cleanText(
-        supplierProductCode
+      brand_raw: cleanText(item.brand),
+      title_raw: cleanText(
+        [item.brand, item.code].filter(Boolean).join(' ')
       ),
 
-    brand_raw:
-      cleanText(brand),
+      description_raw: cleanText(item.rawBlock.join('\n')),
 
-    title_raw:
-      cleanText(title),
+      gender_raw: 'Woman',
+      category_raw: null,
+      subcategory_raw: null,
+      type_raw: null,
+      color_raw: null,
+      season_raw: cleanText(item.season),
 
-    description_raw:
-      cleanText(pageText),
+      composition_raw: null,
+      made_in_raw: null,
+      size_and_fit_raw: null,
 
-    gender_raw:
-      extractValue(
-        pageText,
-        'GENDER'
+      supplier_retail_price: item.retailPrice,
+      supplier_final_price: item.finalPrice,
+      supplier_discount_percent: item.discountPercent,
+
+      currency: 'EUR',
+
+      is_sale: Boolean(
+        item.discountPercent && item.discountPercent > 0
       ),
 
-    category_raw:
-      extractValue(
-        pageText,
-        'CATEGORY'
-      ),
+      supplier_product_url: null,
+      listing_url: START_URL,
 
-    subcategory_raw: null,
+      product_key: `${SUPPLIER_SLUG}:${cleanText(productCode)}`,
+      product_hash: makeHash(item),
 
-    type_raw:
-      extractValue(
-        pageText,
-        'TYPE'
-      ),
-
-    color_raw:
-      extractValue(
-        pageText,
-        'COLOR'
-      ) ||
-      extractValue(
-        pageText,
-        'COLOUR'
-      ),
-
-    season_raw:
-      extractValue(
-        pageText,
-        'SEASON'
-      ),
-
-    composition_raw:
-      extractValue(
-        pageText,
-        'COMPOSITION'
-      ) ||
-      extractValue(
-        pageText,
-        'MATERIAL'
-      ),
-
-    made_in_raw:
-      extractValue(
-        pageText,
-        'MADE IN'
-      ),
-
-    size_and_fit_raw:
-      extractValue(
-        pageText,
-        'SIZE AND FIT'
-      ) ||
-      extractValue(
-        pageText,
-        'SIZE & FIT'
-      ),
-
-    supplier_retail_price:
-      retailPrice,
-
-    supplier_final_price:
-      supplierPrice,
-
-    supplier_discount_percent:
-      supplierDiscountPercent,
-
-    currency: 'EUR',
-
-    is_sale: Boolean(
-      supplierDiscountPercent &&
-      supplierDiscountPercent > 0
-    ),
-
-    supplier_product_url:
-      productUrl,
-
-    listing_url:
-      START_URL,
-
-    product_key: `${SUPPLIER_SLUG}:${cleanText(
-      supplierProductCode
-    ) || productUrl}`,
-
-    product_hash:
-      makeHash({
-        productUrl,
-        pageText
-      }),
-
-    raw_json: {
-      product_url:
-        productUrl,
-
-      page_text:
-        pageText,
-
-      images:
-        uniqueImages
-    },
-
-    scrape_status: 'new',
-
-    is_active: true,
-
-    is_archived: false,
-
-    scraped_at:
-      new Date().toISOString()
-  };
-
-  return product;
-}
-
-async function sendWebhook(
-  products
-) {
-  if (
-    !process.env.N8N_WEBHOOK_URL
-  ) {
-    throw new Error(
-      'N8N_WEBHOOK_URL is missing'
-    );
-  }
-
-  console.log(
-    'Sending webhook to n8n...'
-  );
-
-  const response =
-    await axios.post(
-      process.env
-        .N8N_WEBHOOK_URL,
-      {
-        supplier_name:
-          SUPPLIER_NAME,
-
-        supplier_slug:
-          SUPPLIER_SLUG,
-
-        source:
-          'julian_playwright_scraper',
-
-        scraped_at:
-          new Date().toISOString(),
-
-        products
+      raw_json: {
+        source: 'listing_text',
+        raw_block: item.rawBlock
       },
-      {
-        timeout: 120000
-      }
-    );
 
-  console.log(
-    'Webhook status:',
-    response.status
+      scrape_status: 'new',
+      is_active: true,
+      is_archived: false,
+      scraped_at: new Date().toISOString()
+    };
+
+    return product;
+  });
+
+  return products;
+}
+
+async function sendWebhook(products) {
+  if (!process.env.N8N_WEBHOOK_URL) {
+    throw new Error('N8N_WEBHOOK_URL is missing');
+  }
+
+  console.log('Sending webhook to n8n...');
+
+  const response = await axios.post(
+    process.env.N8N_WEBHOOK_URL,
+    {
+      supplier_name: SUPPLIER_NAME,
+      supplier_slug: SUPPLIER_SLUG,
+      source: 'julian_listing_text_scraper',
+      scraped_at: new Date().toISOString(),
+      products
+    },
+    {
+      timeout: 120000
+    }
   );
 
-  console.log(
-    'Webhook sent successfully'
-  );
+  console.log('Webhook status:', response.status);
+  console.log('Webhook sent successfully');
 }
 
 async function run() {
-  const browser =
-    await chromium.launch({
-      headless: true
-    });
+  const browser = await chromium.launch({
+    headless: true
+  });
 
-  const page =
-    await browser.newPage();
+  const page = await browser.newPage();
 
   try {
     await login(page);
-
     await openListing(page);
 
-    const productLinks =
-      await collectProductLinks(
-        page
-      );
+    const products = await scrapeListingProducts(page);
 
-    if (
-      !productLinks.length
-    ) {
-      console.log(
-        'No product links found'
-      );
-
-      console.log(
-        'DEBUG page url:',
-        page.url()
-      );
-
-      const debugText =
-        await page
-          .locator('body')
-          .innerText()
-          .catch(() => '');
-
-      console.log(
-        'DEBUG body:',
-        debugText.slice(0, 3000)
-      );
-
-      return;
-    }
-
-    const selectedLinks =
-      productLinks.slice(
-        0,
-        LIMIT_PRODUCTS
-      );
-
-    const products = [];
-
-    for (const productUrl of selectedLinks) {
-      try {
-        const product =
-          await scrapeProductPage(
-            page,
-            productUrl
-          );
-
-        products.push(product);
-
-        console.log(
-          'Product scraped:',
-          product.supplier_product_code
-        );
-
-        console.log(
-          'Title:',
-          product.title_raw
-        );
-
-        console.log(
-          'Retail:',
-          product.supplier_retail_price
-        );
-
-        console.log(
-          'Final:',
-          product.supplier_final_price
-        );
-      } catch (error) {
-        console.error(
-          'Product scrape failed:',
-          productUrl
-        );
-
-        console.error(
-          error.message
-        );
-      }
-    }
-
-    console.log(
-      'Prepared products:',
-      products.length
-    );
+    console.log('Prepared products:', products.length);
 
     if (!products.length) {
-      throw new Error(
-        'No products prepared'
-      );
+      throw new Error('No products prepared');
     }
 
-    await sendWebhook(
-      products
-    );
+    console.log('First product preview:', JSON.stringify(products[0], null, 2));
 
+    await sendWebhook(products);
   } finally {
     await browser.close();
   }
 }
 
 run().catch(error => {
-  console.error(
-    'Fatal error:',
-    error.message
-  );
+  console.error('Fatal error:', error.message);
 
   if (error.response) {
-    console.error(
-      'Response status:',
-      error.response.status
-    );
-
-    console.error(
-      'Response data:',
-      error.response.data
-    );
+    console.error('Response status:', error.response.status);
+    console.error('Response data:', error.response.data);
   }
 
   process.exit(1);
