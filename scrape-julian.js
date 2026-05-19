@@ -1,6 +1,5 @@
 const { chromium } = require('playwright');
 const axios = require('axios');
-const { parse } = require('csv-parse/sync');
 const crypto = require('crypto');
 
 const SUPPLIER_NAME = 'Julian Fashion Srl';
@@ -15,6 +14,7 @@ function cleanText(value) {
 
 function toNumber(value) {
   if (value === null || value === undefined) return null;
+
   const cleaned = String(value)
     .replace('€', '')
     .replace('%', '')
@@ -43,61 +43,42 @@ function extractValue(text, label) {
 }
 
 function extractRetailPrice(text) {
-  const match = text.match(/RETAIL PRICE\s*€?\s*([\d.,]+)/i);
+  const match = text.match(/RETAIL PRICE\\s*€?\\s*([\\d.,]+)/i);
   return match ? toNumber(match[1]) : null;
 }
 
 function extractFinalPrice(text) {
-  const match = text.match(/FINAL PRICE\s*-?\s*\d*%?\s*€?\s*([\d.,]+)/i);
+  const match = text.match(/FINAL PRICE\\s*-?\\s*\\d*%?\\s*€?\\s*([\\d.,]+)/i);
   return match ? toNumber(match[1]) : null;
 }
 
-async function scrapeLiveProduct(page, row) {
-  const supplierProductCode = cleanText(row.cod);
+async function collectLinks(page) {
+  return await page.$$eval('a', links =>
+    links
+      .map(a => ({
+        text: (a.innerText || '').trim(),
+        href: a.href
+      }))
+      .filter(link => link.href)
+  );
+}
 
-  const loginUrl = new URL(process.env.JULIAN_LOGIN_URL);
-  const baseUrl = `${loginUrl.protocol}//${loginUrl.host}`;
+function isLikelyProductUrl(url) {
+  return (
+    url.includes('/product/') ||
+    url.includes('/products/') ||
+    url.match(/\\/\\d+[-_]/i) ||
+    url.toLowerCase().includes('product')
+  );
+}
 
-  const searchUrl =
-    `${baseUrl}/index.php?controller=search&orderby=position&orderway=desc&s=${encodeURIComponent(supplierProductCode)}`;
+async function scrapeProductPage(page, productUrl) {
+  console.log('Opening product page:', productUrl);
 
-  console.log('Opening live product search:', supplierProductCode);
-
-  await page.goto(searchUrl, {
+  await page.goto(productUrl, {
     waitUntil: 'domcontentloaded',
     timeout: 120000
   });
-
-  await page.waitForTimeout(3000);
-
-  const productLink = page
-  .locator('a[href*="/product/"]')
-  .first();
-
-const productCount = await productLink.count();
-
-console.log('Detected product links:', productCount);
-
-if (!productCount) {
-  console.log('No product found:', supplierProductCode);
-  return {};
-}
-
- const href = await productLink.getAttribute('href');
-
-console.log('Detected href:', href);
-
-if (!href) {
-  console.log('No href found:', supplierProductCode);
-  return {};
-}
-
-console.log('Opening product page:', href);
-
-await page.goto(href, {
-  waitUntil: 'domcontentloaded',
-  timeout: 120000
-});
 
   await page.waitForTimeout(5000);
 
@@ -105,14 +86,28 @@ await page.goto(href, {
     timeout: 30000
   });
 
-  const retailFromPage = extractRetailPrice(pageText);
-  const finalFromPage = extractFinalPrice(pageText);
+  const title =
+    await page.locator('h1').first().innerText().catch(() => null);
 
-  let discountPercent = null;
+  const brand =
+    extractValue(pageText, 'BRAND') ||
+    extractValue(pageText, 'Designer') ||
+    null;
 
-  if (retailFromPage && finalFromPage && retailFromPage > finalFromPage) {
-    discountPercent = Math.round(
-      ((retailFromPage - finalFromPage) / retailFromPage) * 100
+  const supplierProductCode =
+    extractValue(pageText, 'SPU') ||
+    extractValue(pageText, 'SKU') ||
+    extractValue(pageText, 'Code') ||
+    productUrl.split('/').filter(Boolean).pop();
+
+  const retailPrice = extractRetailPrice(pageText);
+  const supplierPrice = extractFinalPrice(pageText);
+
+  let supplierDiscountPercent = null;
+
+  if (retailPrice && supplierPrice && retailPrice > supplierPrice) {
+    supplierDiscountPercent = Math.round(
+      ((retailPrice - supplierPrice) / retailPrice) * 100
     );
   }
 
@@ -124,39 +119,32 @@ await page.goto(href, {
         .filter(Boolean)
         .filter(src =>
           src.includes('julianfashionstorage') ||
-          src.includes('/img/')
+          src.includes('/img/') ||
+          src.includes('blob.core.windows.net')
         )
   );
 
   const uniqueImages = [...new Set(images)];
 
-  const rows = await page.$$eval(
-    'tr',
-    trs => trs.map(tr => tr.innerText).filter(Boolean)
-  ).catch(() => []);
+  const product = {
+    supplier_name: SUPPLIER_NAME,
+    supplier_sku: null,
+    supplier_product_code: cleanText(supplierProductCode),
 
-  const variants = [];
+    brand_raw: cleanText(brand),
+    title_raw: cleanText(title),
+    description_raw: null,
 
-  for (const rowText of rows) {
-    const clean = rowText.replace(/\s+/g, ' ').trim();
+    gender_raw: extractValue(pageText, 'GENDER'),
+    category_raw: extractValue(pageText, 'CATEGORY'),
+    subcategory_raw: null,
+    type_raw: extractValue(pageText, 'TYPE'),
 
-    const sizeMatch = clean.match(/^([A-Z0-9./-]+)\s+/i);
-    const qtyMatch = clean.match(/(\d+)\s*pc/i);
+    color_raw:
+      extractValue(pageText, 'COLOR') ||
+      extractValue(pageText, 'Colour'),
 
-    if (sizeMatch || qtyMatch) {
-      variants.push({
-        supplier_size: sizeMatch ? sizeMatch[1] : null,
-        stock_quantity: qtyMatch ? Number(qtyMatch[1]) : null,
-        raw_text: clean
-      });
-    }
-  }
-
-  return {
-    product_url: page.url(),
-    page_text: pageText,
-
-    spu: extractValue(pageText, 'SPU') || extractValue(pageText, 'SKU'),
+    season_raw: extractValue(pageText, 'SEASON'),
 
     composition_raw:
       extractValue(pageText, 'COMPOSITION') ||
@@ -164,103 +152,27 @@ await page.goto(href, {
 
     made_in_raw: extractValue(pageText, 'MADE IN'),
 
-    size_and_fit_raw: extractValue(pageText, 'SIZE AND FIT'),
+    size_and_fit_raw:
+      extractValue(pageText, 'SIZE AND FIT') ||
+      extractValue(pageText, 'Size and Fit'),
 
-    type_raw:
-      extractValue(pageText, 'TYPE') ||
-      extractValue(pageText, 'Category'),
-
-    color_raw:
-      extractValue(pageText, 'COLOR') ||
-      cleanText(row.color),
-
-    gender_raw:
-      extractValue(pageText, 'GENDER') ||
-      cleanText(row.gender),
-
-    season_raw:
-      extractValue(pageText, 'SEASON') ||
-      cleanText(row.season),
-
-    supplier_retail_price: retailFromPage,
-    supplier_final_price: finalFromPage,
-    discount_percent: discountPercent,
-
-    images: uniqueImages,
-    variants
-  };
-}
-
-function buildProduct(row, live) {
-  const imageCode =
-  cleanText(row.foto1)
-    ?.split('/jbc/')
-    ?.pop()
-    ?.split('_')
-    ?.[0];
-
-const supplierProductCode =
-  imageCode ||
-  cleanText(row.sku) ||
-  cleanText(row.spu) ||
-  cleanText(row.cod) ||
-  cleanText(row.reference);
-
-console.log('Using search code:', supplierProductCode);
-
-  const csvRetailPrice = toNumber(row['retail price']);
-  const csvFinalPrice = toNumber(row['discounted price']);
-  const csvSupplierPriceIncVat = toNumber(row['cost price']);
-
-  const supplierRetailPrice = live.supplier_retail_price || csvRetailPrice;
-  const supplierFinalPrice = live.supplier_final_price || csvFinalPrice;
-
-  const discountPercent =
-    live.discount_percent ||
-    (
-      supplierRetailPrice &&
-      supplierFinalPrice &&
-      supplierRetailPrice > supplierFinalPrice
-        ? Math.round(((supplierRetailPrice - supplierFinalPrice) / supplierRetailPrice) * 100)
-        : null
-    );
-
-  return {
-    supplier_name: SUPPLIER_NAME,
-    supplier_sku: live.spu || null,
-    supplier_product_code: supplierProductCode,
-
-    brand_raw: cleanText(row.designer),
-    title_raw: cleanText(`${cleanText(row.designer) || ''} ${supplierProductCode || ''}`),
-    description_raw: cleanText(row.description),
-
-    gender_raw: live.gender_raw || cleanText(row.gender),
-    category_raw: cleanText(row.category),
-    subcategory_raw: null,
-    type_raw: live.type_raw || null,
-
-    color_raw: live.color_raw || cleanText(row.color),
-    season_raw: live.season_raw || cleanText(row.season),
-
-    composition_raw: live.composition_raw || null,
-    made_in_raw: live.made_in_raw || null,
-    size_and_fit_raw: live.size_and_fit_raw || null,
-
-    supplier_retail_price: supplierRetailPrice,
-    supplier_final_price: supplierFinalPrice,
-
+    retail_price: retailPrice,
+    supplier_price: supplierPrice,
     currency: 'EUR',
-    supplier_discount_percent: discountPercent,
-    is_sale: Boolean(discountPercent && discountPercent > 0),
+    supplier_discount_percent: supplierDiscountPercent,
 
-    supplier_product_url: live.product_url || null,
+    is_sale: Boolean(supplierDiscountPercent && supplierDiscountPercent > 0),
+
+    supplier_product_url: productUrl,
     listing_url: null,
-    product_key: `${SUPPLIER_SLUG}:${supplierProductCode}`,
-    product_hash: makeHash({ row, live }),
+
+    product_key: `${SUPPLIER_SLUG}:${cleanText(supplierProductCode) || productUrl}`,
+    product_hash: makeHash({ productUrl, pageText }),
 
     raw_json: {
-      csv: row,
-      live
+      product_url: productUrl,
+      page_text: pageText,
+      images: uniqueImages
     },
 
     scrape_status: 'new',
@@ -268,6 +180,8 @@ console.log('Using search code:', supplierProductCode);
     is_archived: false,
     scraped_at: new Date().toISOString()
   };
+
+  return product;
 }
 
 async function run() {
@@ -277,84 +191,102 @@ async function run() {
 
   const page = await browser.newPage();
 
-  console.log('Opening Julian B2B...');
+  try {
+    console.log('Opening Julian B2B...');
 
-  await page.goto(process.env.JULIAN_LOGIN_URL, {
-    waitUntil: 'networkidle',
-    timeout: 120000
-  });
+    await page.goto(process.env.JULIAN_LOGIN_URL, {
+      waitUntil: 'networkidle',
+      timeout: 120000
+    });
 
-  console.log('Login page opened');
+    console.log('Login page opened');
 
-  await page.fill('input[type="email"]', process.env.JULIAN_EMAIL);
-  await page.fill('input[type="password"]', process.env.JULIAN_PASSWORD);
+    await page.fill('input[type="email"]', process.env.JULIAN_EMAIL);
+    await page.fill('input[type="password"]', process.env.JULIAN_PASSWORD);
 
-  console.log('Credentials filled');
+    console.log('Credentials filled');
 
-  await page.click('button[type="submit"]');
-  await page.waitForLoadState('networkidle');
+    await page.click('button[type="submit"]');
+    await page.waitForLoadState('networkidle');
 
-  console.log('Login submitted');
+    console.log('Login submitted');
+    console.log('Current URL:', page.url());
 
-  const cookies = await page.context().cookies();
+    console.log('Collecting links after login...');
 
-  const cookieHeader = cookies
-    .map(c => `${c.name}=${c.value}`)
-    .join('; ');
+    const links = await collectLinks(page);
 
-  console.log('Fetching export CSV...');
+    console.log('Total links found:', links.length);
 
-  const exportResponse = await axios.get(
-    'https://b2bfashion.online/module/bbapi/get_export',
-    {
-      responseType: 'text',
-      headers: {
-        Cookie: cookieHeader
+    const productLinks = links
+      .map(link => link.href)
+      .filter(Boolean)
+      .filter(isLikelyProductUrl);
+
+    const uniqueProductLinks = [...new Set(productLinks)];
+
+    console.log('Detected product links:', uniqueProductLinks.length);
+
+    if (!uniqueProductLinks.length) {
+      console.log('No product links found. First 80 links for debugging:');
+      console.log(JSON.stringify(links.slice(0, 80), null, 2));
+      throw new Error('No product links found on current Julian page');
+    }
+
+    console.log('First product links:');
+    console.log(JSON.stringify(uniqueProductLinks.slice(0, 10), null, 2));
+
+    const selectedLinks = uniqueProductLinks.slice(0, LIMIT_PRODUCTS);
+
+    const products = [];
+
+    for (const productUrl of selectedLinks) {
+      try {
+        const product = await scrapeProductPage(page, productUrl);
+        products.push(product);
+
+        console.log('Product scraped:', product.supplier_product_code);
+        console.log('Title:', product.title_raw);
+        console.log('Retail price:', product.retail_price);
+        console.log('Supplier price:', product.supplier_price);
+        console.log('Composition:', product.composition_raw);
+        console.log('Made in:', product.made_in_raw);
+      } catch (error) {
+        console.error('Product scrape failed:', productUrl, error.message);
+      }
+    }
+
+    console.log('Prepared products:', products.length);
+
+    if (!products.length) {
+      throw new Error('No products prepared');
+    }
+
+    if (!process.env.N8N_WEBHOOK_URL) {
+      throw new Error('N8N_WEBHOOK_URL is missing');
+    }
+
+    console.log('Sending webhook to n8n...');
+
+    const webhookResponse = await axios.post(
+      process.env.N8N_WEBHOOK_URL,
+      {
+        supplier_name: SUPPLIER_NAME,
+        supplier_slug: SUPPLIER_SLUG,
+        source: 'julian_site_first_scraper',
+        scraped_at: new Date().toISOString(),
+        products
       },
-      timeout: 120000
-    }
-  );
+      {
+        timeout: 120000
+      }
+    );
 
-  console.log('Export status:', exportResponse.status);
-
-  const records = parse(exportResponse.data, {
-    columns: true,
-    skip_empty_lines: true
-  });
-
-  console.log('Parsed rows:', records.length);
-
-  const products = [];
-
-  for (const row of records.slice(0, LIMIT_PRODUCTS)) {
-    const live = await scrapeLiveProduct(page, row);
-    const product = buildProduct(row, live);
-    products.push(product);
+    console.log('Webhook status:', webhookResponse.status);
+    console.log('Webhook sent successfully');
+  } finally {
+    await browser.close();
   }
-
-  console.log('Prepared products:', products.length);
-  console.log('First product preview:', JSON.stringify(products[0], null, 2));
-
-  console.log('Sending webhook to n8n...');
-
-  const webhookResponse = await axios.post(
-    process.env.N8N_WEBHOOK_URL,
-    {
-      supplier_name: SUPPLIER_NAME,
-      supplier_slug: SUPPLIER_SLUG,
-      source: 'julian_csv_export_plus_live_page',
-      scraped_at: new Date().toISOString(),
-      products
-    },
-    {
-      timeout: 120000
-    }
-  );
-
-  console.log('Webhook status:', webhookResponse.status);
-  console.log('Webhook sent successfully');
-
-  await browser.close();
 }
 
 run().catch(error => {
