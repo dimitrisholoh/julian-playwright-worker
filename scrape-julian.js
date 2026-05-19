@@ -43,12 +43,12 @@ function extractValue(text, label) {
 }
 
 function extractRetailPrice(text) {
-  const match = text.match(/RETAIL PRICE\\s*€?\\s*([\\d.,]+)/i);
+  const match = text.match(/RETAIL PRICE\s*€?\s*([\d.,]+)/i);
   return match ? toNumber(match[1]) : null;
 }
 
 function extractFinalPrice(text) {
-  const match = text.match(/FINAL PRICE\\s*-?\\s*\\d*%?\\s*€?\\s*([\\d.,]+)/i);
+  const match = text.match(/FINAL PRICE\s*-?\s*\d*%?\s*€?\s*([\d.,]+)/i);
   return match ? toNumber(match[1]) : null;
 }
 
@@ -74,14 +74,17 @@ function isLikelyProductUrl(url) {
     cleanUrl.includes('special-condition') ||
     cleanUrl.includes('controller=') ||
     cleanUrl.includes('cart') ||
-    cleanUrl.includes('login')
+    cleanUrl.includes('login') ||
+    cleanUrl.includes('#')
   ) {
     return false;
   }
 
   return (
-    /\/\d+[-_][a-z0-9-]+\.html/i.test(cleanUrl) ||
-    /\/[a-z0-9-]+\/\d+[-_][a-z0-9-]+/i.test(cleanUrl)
+    /\/\d{5,}/i.test(cleanUrl) ||
+    cleanUrl.includes('/product/') ||
+    cleanUrl.includes('/item/') ||
+    cleanUrl.includes('.html')
   );
 }
 
@@ -242,6 +245,7 @@ async function run() {
     const links = await collectLinks(page);
 
     console.log('Total links found:', links.length);
+    
 
     const productLinks = links
       .map(link => link.href)
