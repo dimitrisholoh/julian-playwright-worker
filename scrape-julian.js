@@ -292,21 +292,20 @@ page.on('response', async (response) => {
     url.includes('action=quickview')
   ) {
     try {
-      const json = await response.json();
+    const json = await response.json();
 
-      quickviewProducts.push(json);
+    quickviewProducts.push(json);
 
-      console.log(
-        'Quickview product captured:',
-        quickviewProducts.length
-      );
+    const firstProduct = json.product || {};
 
-      console.log(
-        'Quickview product keys:',
-        Object.keys(json)
-      );
-    } catch (error) {
-      console.log(
+    console.log(
+      'Quickview captured:',
+      firstProduct.name || 'NO_NAME',
+      firstProduct.reference || 'NO_REF'
+    );
+  
+  } catch (error) {
+    console.log(
         'Quickview JSON parse failed:',
         error.message
       );
@@ -320,24 +319,85 @@ page.on('response', async (response) => {
 
     await scrapeListingProducts(page);
 
-const products = quickviewProducts.flatMap(
-  item => item.products || []
-);
+    const products = quickviewProducts
+  .map(item => item.product)
+  .filter(Boolean)
+  .slice(0, LIMIT_PRODUCTS)
+  .map(product => {
+    const features = product.grouped_features || {};
+    const getFeature = name => features[name]?.value || null;
 
+    const productCode =
+      product.reference ||
+      product.spu ||
+      product.id_product ||
+      product.id;
+
+    return {
+      supplier_name: SUPPLIER_NAME,
+      supplier_slug: SUPPLIER_SLUG,
+
+      supplier_sku: null,
+      supplier_product_code: cleanText(productCode),
+
+      brand_raw: null,
+      title_raw: cleanText(product.name),
+
+      description_raw: cleanText(product.description),
+
+      gender_raw: getFeature('gender'),
+      category_raw: cleanText(product.category_name || product.category),
+      subcategory_raw: null,
+      type_raw: getFeature('type'),
+      color_raw: getFeature('color'),
+      season_raw: getFeature('season'),
+
+      composition_raw: getFeature('composition'),
+      made_in_raw: getFeature('made in'),
+      size_and_fit_raw: getFeature('size and fit'),
+
+      supplier_retail_price: toNumber(
+        product.price_without_reduction || product.regular_price
+      ),
+      supplier_final_price: toNumber(
+        product.price_amount || product.price
+      ),
+      supplier_discount_percent: toNumber(
+        product.discount_percentage
+      ),
+
+      currency: 'EUR',
+
+      is_sale: Boolean(product.has_discount),
+
+      supplier_product_url: cleanText(product.link || product.url),
+      listing_url: START_URL,
+
+      product_key: `${SUPPLIER_SLUG}:${cleanText(productCode)}`,
+      product_hash: makeHash(product),
+
+      raw_json: product,
+
+      scrape_status: 'new',
+      is_active: true,
+      is_archived: false,
+      scraped_at: new Date().toISOString()
+    };
+  });
+    
     console.log(
-  'Captured quickview responses:',
-  quickviewProducts.length
-);
+      'Captured quickview responses:',
+      quickviewProducts.length
+    );
 
 if (quickviewProducts.length) {
-  console.log(
-    'First quickview full JSON:',
-    JSON.stringify(quickviewProducts[0], null, 2)
-  );
-  console.log(
-  'FIRST NORMAL PRODUCT:',
-  JSON.stringify(products[0], null, 2)
-);
+  const p = products[0] || {};
+
+  console.log('Quickview captured OK');
+  console.log('Product name:', p.name);
+  console.log('Product reference:', p.reference);
+  console.log('Product price:', p.price);
+  console.log('Product color:', p.color);
 }
 
     console.log('Prepared products:', products.length);
