@@ -240,10 +240,16 @@ async function run() {
 
     console.log('Detected product links:', uniqueProductLinks.length);
 
-    if (!uniqueProductLinks.length) {
-      console.log('No product links found. First 80 links for debugging:');
-      console.log(JSON.stringify(links.slice(0, 80), null, 2));
-      throw new Error('No product links found on current Julian page');
+   
+  if (!uniqueProductLinks.length) {
+    console.log('DEBUG page url:', page.url());
+
+    const debugHtml = await page.locator('body').innerText().catch(() => '');
+    console.log('DEBUG body text first 2000:', debugHtml.slice(0, 2000));
+
+    console.log('DEBUG first links:', JSON.stringify(links.slice(0, 100), null, 2));
+
+    return;
     }
 
     console.log('First product links:');
