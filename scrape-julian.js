@@ -185,7 +185,12 @@ async function clickQuickviews(page) {
   const quickButtons = await page.$$(
     '.button-action.quick-view, a.quick-view, [title="Quick view"]'
   );
-
+  
+  console.log(
+    'Quick view elements:',
+    await page.locator('.quick-view').count()
+  );
+  
   console.log('Quick buttons found:', quickButtons.length);
 
   const limit = Math.min(quickButtons.length, LIMIT_PRODUCTS);
