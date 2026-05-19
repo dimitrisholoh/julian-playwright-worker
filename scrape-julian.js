@@ -131,71 +131,68 @@ async function openListing(page) {
 }
 
 async function collectProductLinks(page) {
-  console.log('Collecting product links from page HTML...');
+  console.log(
+    'Collecting product links from product cards...'
+  );
 
-  const html = await page.content();
+  const links = await page.$$eval(
+    'a',
+    elements =>
+      elements
+        .map(element => {
+          return (
+            element.href ||
+            element.getAttribute('href') ||
+            null
+          );
+        })
+        .filter(Boolean)
+  );
 
-  const matches = [
-    ...html.matchAll(/https:\/\/b2bfashion\.online\/[^"'\s<>]+/gi)
+  const cleaned = links.filter(link => {
+    const url = link.toLowerCase();
+
+    if (
+      url.includes('javascript:') ||
+      url.includes('#') ||
+      url.includes('login') ||
+      url.includes('cart') ||
+      url.includes('my-account') ||
+      url.includes('content/') ||
+      url.includes('promo') ||
+      url.includes('new-products') ||
+      url.includes('submitcurrency') ||
+      url.includes('controller=')
+    ) {
+      return false;
+    }
+
+    return (
+      url.includes('.html') ||
+      /\/\d{5,}/i.test(url)
+    );
+  });
+
+  const uniqueLinks = [
+    ...new Set(cleaned)
   ];
 
-  const productLinks = matches
-    .map(match => match[0])
-    .filter(Boolean)
-    .filter(url => {
-      const cleanUrl = url.toLowerCase();
+  console.log(
+    'Detected product links:',
+    uniqueLinks.length
+  );
 
-      if (
-        cleanUrl.includes('javascript:') ||
-        cleanUrl.includes('#') ||
-        cleanUrl.includes('login') ||
-        cleanUrl.includes('cart') ||
-        cleanUrl.includes('my-account') ||
-        cleanUrl.includes('content/') ||
-        cleanUrl.includes('promo') ||
-        cleanUrl.includes('new-products') ||
-        cleanUrl.includes('submitcurrency') ||
-        cleanUrl.includes('controller=') ||
-        cleanUrl.includes('cat-url')
-      ) {
-        return false;
-      }
-
-      return (
-        cleanUrl.includes('.html') ||
-        /\/\d{5,}/i.test(cleanUrl)
-      );
-    });
-
-  const uniqueLinks = [...new Set(productLinks)];
-
-  console.log('Detected product links:', uniqueLinks.length);
-  console.log('First product links:', JSON.stringify(uniqueLinks.slice(0, 20), null, 2));
+  console.log(
+    'First product links:',
+    JSON.stringify(
+      uniqueLinks.slice(0, 20),
+      null,
+      2
+    )
+  );
 
   return uniqueLinks;
 }
-
-async function scrapeProductPage(
-  page,
-  productUrl
-) {
-  console.log(
-    'Opening product:',
-    productUrl
-  );
-
-  await page.goto(productUrl, {
-    waitUntil: 'domcontentloaded',
-    timeout: 120000
-  });
-
-  await page.waitForTimeout(5000);
-
-  const pageText =
-    await page.locator('body')
-      .innerText({
-        timeout: 30000
-      });
 
   const title =
     await page
