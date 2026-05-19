@@ -282,7 +282,9 @@ async function run() {
 
   const page = await browser.newPage();
 
-  page.on('response', async (response) => {
+  const quickviewProducts = [];
+
+page.on('response', async (response) => {
   const url = response.url();
 
   if (
@@ -292,12 +294,22 @@ async function run() {
     try {
       const json = await response.json();
 
+      quickviewProducts.push(json);
+
       console.log(
-        'PRODUCT JSON:',
-        JSON.stringify(json, null, 2)
+        'Quickview product captured:',
+        quickviewProducts.length
       );
-    } catch (e) {
-      console.log('JSON parse error');
+
+      console.log(
+        'Quickview product keys:',
+        Object.keys(json)
+      );
+    } catch (error) {
+      console.log(
+        'Quickview JSON parse failed:',
+        error.message
+      );
     }
   }
 });
@@ -307,6 +319,18 @@ async function run() {
     await openListing(page);
 
     const products = await scrapeListingProducts(page);
+
+    console.log(
+  'Captured quickview responses:',
+  quickviewProducts.length
+);
+
+if (quickviewProducts.length) {
+  console.log(
+    'First quickview full JSON:',
+    JSON.stringify(quickviewProducts[0], null, 2)
+  );
+}
 
     console.log('Prepared products:', products.length);
 
