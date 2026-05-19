@@ -131,70 +131,46 @@ async function openListing(page) {
 }
 
 async function collectProductLinks(page) {
-  console.log('Collecting product links...');
+  console.log('Collecting product links from page HTML...');
 
-  const links = await page.$$eval(
-    'a',
-    elements =>
-      elements.map(element => ({
-        href: element.href || null,
-        text: (
-          element.innerText || ''
-        ).trim(),
-        className:
-          element.className || ''
-      }))
-  );
+  const html = await page.content();
 
-  console.log(
-    'Total raw links:',
-    links.length
-  );
+  const matches = [
+    ...html.matchAll(/https:\/\/b2bfashion\.online\/[^"'\s<>]+/gi)
+  ];
 
-  const filteredLinks = links
-    .map(link => link.href)
+  const productLinks = matches
+    .map(match => match[0])
     .filter(Boolean)
-    .filter(href => {
-      const url = href.toLowerCase();
+    .filter(url => {
+      const cleanUrl = url.toLowerCase();
 
       if (
-        url.includes('javascript:') ||
-        url.includes('#') ||
-        url.includes('login') ||
-        url.includes('cart') ||
-        url.includes('my-account') ||
-        url.includes('content/') ||
-        url.includes('promo') ||
-        url.includes('new-products') ||
-        url.includes('submitcurrency') ||
-        url.includes('controller=')
+        cleanUrl.includes('javascript:') ||
+        cleanUrl.includes('#') ||
+        cleanUrl.includes('login') ||
+        cleanUrl.includes('cart') ||
+        cleanUrl.includes('my-account') ||
+        cleanUrl.includes('content/') ||
+        cleanUrl.includes('promo') ||
+        cleanUrl.includes('new-products') ||
+        cleanUrl.includes('submitcurrency') ||
+        cleanUrl.includes('controller=') ||
+        cleanUrl.includes('cat-url')
       ) {
         return false;
       }
 
       return (
-        url.includes('.html') ||
-        /\/\d{5,}/i.test(url)
+        cleanUrl.includes('.html') ||
+        /\/\d{5,}/i.test(cleanUrl)
       );
     });
 
-  const uniqueLinks = [
-    ...new Set(filteredLinks)
-  ];
+  const uniqueLinks = [...new Set(productLinks)];
 
-  console.log(
-    'Detected product links:',
-    uniqueLinks.length
-  );
-
-  console.log(
-    'First product links:',
-    JSON.stringify(
-      uniqueLinks.slice(0, 20),
-      null,
-      2
-    )
-  );
+  console.log('Detected product links:', uniqueLinks.length);
+  console.log('First product links:', JSON.stringify(uniqueLinks.slice(0, 20), null, 2));
 
   return uniqueLinks;
 }
