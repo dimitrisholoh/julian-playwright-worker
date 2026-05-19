@@ -135,14 +135,19 @@ async function login(page) {
 async function openListing(page) {
   console.log('Opening listing page...');
 
-  await page.goto(START_URL, {
-    waitUntil: 'domcontentloaded',
-    timeout: 120000
-  });
+  try {
+    await page.goto(START_URL, {
+      waitUntil: 'domcontentloaded',
+      timeout: 120000
+    });
+  } catch (error) {
+    console.log('Listing goto warning:', error.message);
+  }
 
-  await page.waitForTimeout(15000);
-  await page.mouse.wheel(0, 10000);
-  await page.waitForTimeout(5000);
+  await page.waitForTimeout(10000);
+
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await page.waitForTimeout(10000);
 
   console.log('Listing opened');
 }
@@ -150,7 +155,11 @@ async function openListing(page) {
 async function clickQuickviews(page) {
   console.log('Clicking quickview buttons...');
 
-  const quickButtons = await page.$$('.button-action.quick-view');
+  await page.waitForTimeout(10000);
+
+  const quickButtons = await page.$$(
+    '.button-action.quick-view, a.quick-view, [title="Quick view"]'
+  );
 
   console.log('Quick buttons found:', quickButtons.length);
 
