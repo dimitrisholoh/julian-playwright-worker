@@ -146,6 +146,18 @@ async function openListing(page) {
 async function scrapeListingProducts(page) {
   console.log('Scraping products from listing text...');
 
+  const quickButtons = await page.$$('.button-action.quick-view');
+
+  console.log('Quick buttons found:', quickButtons.length);
+
+  if (quickButtons.length > 0) {
+    await quickButtons[0].click();
+
+    console.log('Quickview clicked');
+
+    await page.waitForTimeout(5000);
+  }
+
   const html = await page.content();
 
 console.log(
