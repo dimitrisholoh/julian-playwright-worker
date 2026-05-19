@@ -146,6 +146,23 @@ async function openListing(page) {
 async function scrapeListingProducts(page) {
   console.log('Scraping products from listing text...');
 
+  const html = await page.content();
+
+console.log(
+  'DEBUG html contains product code:',
+  html.includes('1240672N295')
+);
+
+const idx = html.indexOf('1240672N295');
+
+console.log(
+  'DEBUG product code context:',
+  html.slice(
+    Math.max(0, idx - 1000),
+    idx + 1000
+  )
+);
+
   const pageText = await page.locator('body').innerText({
     timeout: 30000
   });
