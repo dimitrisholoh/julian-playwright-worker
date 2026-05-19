@@ -8,7 +8,7 @@ const LIMIT_PRODUCTS = Number(process.env.LIMIT_PRODUCTS || 3);
 
 const START_URL =
   process.env.JULIAN_START_URL ||
-  'https://b2bfashion.online/206-woman';
+  'https://b2bfashion.online/206-woman?orderby=date_add&orderway=desc'
 
 function cleanText(value) {
   if (value === null || value === undefined) return null;
@@ -162,11 +162,16 @@ async function clickQuickviews(page) {
   (await page.locator('body').innerText()).slice(0, 1000)
   );
 
+  await page.waitForTimeout(30000);
+
+  console.log('After listing URL:', page.url());
+  console.log('After listing title:', await page.title());
+
   console.log(
     'Quick view text exists:',
     (await page.locator('body').innerText()).includes('Quick view')
   );
-
+  
   console.log(
     'Product miniature count:',
     await page.locator('.product-miniature').count()
@@ -176,9 +181,7 @@ async function clickQuickviews(page) {
     'Any button-action count:',
     await page.locator('.button-action').count()
   );
-
-  await page.waitForTimeout(10000);
-
+  
   const quickButtons = await page.$$(
     '.button-action.quick-view, a.quick-view, [title="Quick view"]'
   );
