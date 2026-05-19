@@ -8,7 +8,7 @@ const LIMIT_PRODUCTS = Number(process.env.LIMIT_PRODUCTS || 3);
 
 const START_URL =
   process.env.JULIAN_START_URL ||
-  'https://b2bfashion.online/206-woman?orderby=date_add&orderway=desc'
+  'https://b2bfashion.online/206-woman'
 
 function cleanText(value) {
   if (value === null || value === undefined) return null;
