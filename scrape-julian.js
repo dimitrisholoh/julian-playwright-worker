@@ -334,6 +334,10 @@ if (quickviewProducts.length) {
     'First quickview full JSON:',
     JSON.stringify(quickviewProducts[0], null, 2)
   );
+  console.log(
+  'FIRST NORMAL PRODUCT:',
+  JSON.stringify(products[0], null, 2)
+);
 }
 
     console.log('Prepared products:', products.length);
