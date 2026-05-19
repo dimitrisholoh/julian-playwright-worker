@@ -144,7 +144,7 @@ async function openListing(page) {
 
   await page.waitForTimeout(5000);
 
-  await page.getByText('WOMAN', { exact: true }).click();
+  await page.locator('a[href*="/206-woman"]').first().click();
 
   await page.waitForTimeout(30000);
 
