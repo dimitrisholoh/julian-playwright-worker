@@ -64,11 +64,24 @@ async function collectLinks(page) {
 }
 
 function isLikelyProductUrl(url) {
+  const cleanUrl = String(url || '').toLowerCase();
+
+  if (
+    cleanUrl.includes('content/') ||
+    cleanUrl.includes('new-products') ||
+    cleanUrl.includes('promo') ||
+    cleanUrl.includes('cat-url') ||
+    cleanUrl.includes('special-condition') ||
+    cleanUrl.includes('controller=') ||
+    cleanUrl.includes('cart') ||
+    cleanUrl.includes('login')
+  ) {
+    return false;
+  }
+
   return (
-    url.includes('/product/') ||
-    url.includes('/products/') ||
-    /\d+[-_]/i.test(url) ||
-    url.toLowerCase().includes('product')
+    /\/\d+[-_][a-z0-9-]+\.html/i.test(cleanUrl) ||
+    /\/[a-z0-9-]+\/\d+[-_][a-z0-9-]+/i.test(cleanUrl)
   );
 }
 
