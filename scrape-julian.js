@@ -199,7 +199,7 @@ async function clickQuickviews(page) {
 
   const limit = Math.min(quickButtons.length, LIMIT_PRODUCTS);
 
-  for (let i = 0; i < limit; i++) {
+    for (let i = 0; i < limit; i++) {
     try {
       const button = page.locator('.button-action.quick-view').nth(i);
 
@@ -218,8 +218,9 @@ async function clickQuickviews(page) {
         await closeBtn.click({ force: true }).catch(() => {});
         await page.waitForTimeout(1000);
       }
-  } catch (error) {
-    console.log('Quickview click skipped:', i + 1, error.message);
+    } catch (error) {
+      console.log('Quickview click skipped:', i + 1, error.message);
+    }
   }
 }
 
