@@ -200,30 +200,44 @@ async function clickQuickviews(page) {
   const limit = Math.min(quickButtons.length, LIMIT_PRODUCTS);
 
     for (let i = 0; i < limit; i++) {
-    try {
-      const button = page.locator('.button-action.quick-view').nth(i);
+  try {
+    const button = page.locator('.button-action.quick-view').nth(i);
 
-      await button.scrollIntoViewIfNeeded();
-      await page.waitForTimeout(500);
+    await button.evaluate(el => {
+      el.scrollIntoView({
+        behavior: 'instant',
+        block: 'center'
+      });
+    });
 
-      await button.click({ force: true, timeout: 10000 });
+    await page.waitForTimeout(1500);
+
+    if (await button.isVisible()) {
+      await button.click({
+        force: true,
+        timeout: 10000
+      });
 
       console.log('Quickview clicked:', i + 1);
 
       await page.waitForTimeout(3000);
 
-      const closeBtn = page.locator('.quickview .close, .modal .close, button.close').first();
+      const closeBtn = page
+        .locator('.quickview .close, .modal .close, button.close')
+        .first();
 
       if (await closeBtn.count()) {
         await closeBtn.click({ force: true }).catch(() => {});
         await page.waitForTimeout(1000);
-      }
-    } catch (error) {
-      console.log('Quickview click skipped:', i + 1, error.message);
+      
+    } else {
+      console.log('Button not visible:', i + 1);
     }
+  } catch (error) {
+    console.log('Quickview click skipped:', i + 1, error.message);
   }
 }
-
+}
 async function sendWebhook(products) {
   if (!process.env.N8N_WEBHOOK_URL) {
     throw new Error('N8N_WEBHOOK_URL is missing');
