@@ -5,10 +5,9 @@ const crypto = require('crypto');
 const SUPPLIER_NAME = 'Julian Fashion Srl';
 const SUPPLIER_SLUG = 'julian-fashion';
 const LIMIT_PRODUCTS = Number(process.env.LIMIT_PRODUCTS || 10);
+const MAX_PAGES = Number(process.env.MAX_PAGES || 3);
 
-const START_URL =
-  process.env.JULIAN_START_URL ||
-  'https://b2bfashion.online/';
+const START_URL = process.env.JULIAN_START_URL || 'https://b2bfashion.online/';
 
 function cleanText(value) {
   if (value === null || value === undefined) return null;
@@ -55,14 +54,8 @@ function normalizeProduct(product) {
     product.wholesale_price
   );
 
-  const finalPrice = toNumber(
-    product.price_amount ||
-    product.price
-  );
-
-  const discountPercent = toNumber(
-    product.discount_percentage
-  );
+  const finalPrice = toNumber(product.price_amount || product.price);
+  const discountPercent = toNumber(product.discount_percentage);
 
   return {
     supplier_name: SUPPLIER_NAME,
@@ -73,7 +66,6 @@ function normalizeProduct(product) {
 
     brand_raw: null,
     title_raw: cleanText(product.name),
-
     description_raw: cleanText(product.description),
 
     gender_raw: getFeature(product, 'gender'),
@@ -92,7 +84,6 @@ function normalizeProduct(product) {
     supplier_discount_percent: discountPercent,
 
     currency: 'EUR',
-
     is_sale: Boolean(product.has_discount || discountPercent),
 
     supplier_product_url: cleanText(product.link || product.url),
@@ -118,17 +109,6 @@ async function login(page) {
     timeout: 120000
   });
 
-  await page.goto(listingUrl, {
-    waitUntil: 'domcontentloaded',
-    timeout: 120000
-  }).catch(e => {
-    console.log('Listing goto warning:', e.message);
-  });
-
-  if (!page.url().includes('/206-woman')) {
-    await page.locator('a[href*="/206-woman"]').first().click();
-    await page.waitForTimeout(10000);
-  }
   console.log('Login page loaded');
 
   await page.fill('input[type="email"]', process.env.JULIAN_EMAIL);
@@ -147,9 +127,9 @@ async function openListing(page, pageNumber = 1) {
   console.log('Opening listing page...');
 
   const listingUrl =
-  pageNumber === 1
-    ? 'https://b2bfashion.online/206-woman'
-    : `https://b2bfashion.online/206-woman?page=${pageNumber}`;
+    pageNumber === 1
+      ? 'https://b2bfashion.online/206-woman'
+      : `https://b2bfashion.online/206-woman?page=${pageNumber}`;
 
   console.log('Opening URL:', listingUrl);
 
@@ -162,8 +142,21 @@ async function openListing(page, pageNumber = 1) {
 
   await page.waitForTimeout(10000);
 
-  await page.mouse.wheel(0, 15000);
+  if (!page.url().includes('/206-woman')) {
+    console.log('Not on woman listing, clicking menu link...');
 
+    await page
+      .locator('a[href*="/206-woman"]')
+      .first()
+      .click({ force: true, timeout: 30000 })
+      .catch(e => {
+        console.log('Woman menu click warning:', e.message);
+      });
+
+    await page.waitForTimeout(10000);
+  }
+
+  await page.mouse.wheel(0, 15000);
   await page.waitForTimeout(5000);
 
   console.log('Listing opened');
@@ -178,24 +171,13 @@ async function openListing(page, pageNumber = 1) {
 
 async function clickQuickviews(page) {
   console.log('Clicking quickview buttons...');
-  
   console.log('Current listing URL:', page.url());
 
-  console.log(
-    'Body text preview:',
-  (await page.locator('body').innerText()).slice(0, 1000)
-  );
-
-  await page.waitForTimeout(30000);
+  await page.waitForTimeout(5000);
 
   console.log('After listing URL:', page.url());
   console.log('After listing title:', await page.title());
 
-  console.log(
-    'Quick view text exists:',
-    (await page.locator('body').innerText()).includes('Quick view')
-  );
-  
   console.log(
     'Product miniature count:',
     await page.locator('.product-miniature').count()
@@ -205,59 +187,60 @@ async function clickQuickviews(page) {
     'Any button-action count:',
     await page.locator('.button-action').count()
   );
-  
+
   const quickButtons = await page.$$(
     '.button-action.quick-view, a.quick-view, [title="Quick view"]'
   );
-  
+
   console.log(
     'Quick view elements:',
     await page.locator('.quick-view').count()
   );
-  
+
   console.log('Quick buttons found:', quickButtons.length);
 
   const limit = Math.min(quickButtons.length, LIMIT_PRODUCTS);
 
-    for (let i = 0; i < limit; i++) {
-  try {
-    const button = page.locator('.button-action.quick-view').nth(i);
+  for (let i = 0; i < limit; i++) {
+    try {
+      const button = page.locator('.button-action.quick-view').nth(i);
 
-    await button.evaluate(el => {
-      el.scrollIntoView({
-        behavior: 'instant',
-        block: 'center'
-      });
-    });
-
-    await page.waitForTimeout(1500);
-
-    if (await button.isVisible()) {
-      await button.click({
-        force: true,
-        timeout: 10000
+      await button.evaluate(el => {
+        el.scrollIntoView({
+          behavior: 'instant',
+          block: 'center'
+        });
       });
 
-      console.log('Quickview clicked:', i + 1);
+      await page.waitForTimeout(1500);
 
-      await page.waitForTimeout(3000);
+      if (await button.isVisible()) {
+        await button.click({
+          force: true,
+          timeout: 10000
+        });
 
-      const closeBtn = page
-        .locator('.quickview .close, .modal .close, button.close')
-        .first();
+        console.log('Quickview clicked:', i + 1);
 
-      if (await closeBtn.count()) {
-        await closeBtn.click({ force: true }).catch(() => {});
-        await page.waitForTimeout(1000);
+        await page.waitForTimeout(3000);
+
+        const closeBtn = page
+          .locator('.quickview .close, .modal .close, button.close')
+          .first();
+
+        if (await closeBtn.count()) {
+          await closeBtn.click({ force: true }).catch(() => {});
+          await page.waitForTimeout(1000);
+        }
+      } else {
+        console.log('Button not visible:', i + 1);
       }
-    } else {
-      console.log('Button not visible:', i + 1);
+    } catch (error) {
+      console.log('Quickview click skipped:', i + 1, error.message);
     }
-  } catch (error) {
-    console.log('Quickview click skipped:', i + 1, error.message);
   }
 }
-}
+
 async function sendWebhook(products) {
   if (!process.env.N8N_WEBHOOK_URL) {
     throw new Error('N8N_WEBHOOK_URL is missing');
@@ -289,7 +272,6 @@ async function run() {
   });
 
   const page = await browser.newPage();
-
   const quickviewProducts = [];
 
   page.on('response', async (response) => {
@@ -319,25 +301,23 @@ async function run() {
 
   try {
     await login(page);
-    for (let currentPage = 1; currentPage <= 3; currentPage++) {
 
-  console.log('========================');
-  console.log('PAGE:', currentPage);
-  console.log('========================');
+    for (let currentPage = 1; currentPage <= MAX_PAGES; currentPage++) {
+      console.log('========================');
+      console.log('PAGE:', currentPage);
+      console.log('========================');
 
-  const productCount = await openListing(page, currentPage);
+      const productCount = await openListing(page, currentPage);
 
-  if (!productCount) {
-    console.log('No products found. Stop pagination.');
-    break;
-  }
+      if (!productCount) {
+        console.log('No products found. Stop pagination.');
+        break;
+      }
 
-  await clickQuickviews(page);
-}
+      await clickQuickviews(page);
+    }
 
-    const products = quickviewProducts
-      .slice(0, LIMIT_PRODUCTS)
-      .map(normalizeProduct);
+    const products = quickviewProducts.map(normalizeProduct);
 
     console.log('Captured quickview products:', quickviewProducts.length);
     console.log('Prepared products:', products.length);
