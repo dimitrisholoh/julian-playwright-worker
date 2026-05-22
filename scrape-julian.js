@@ -118,6 +118,17 @@ async function login(page) {
     timeout: 120000
   });
 
+  await page.goto(listingUrl, {
+    waitUntil: 'domcontentloaded',
+    timeout: 120000
+  }).catch(e => {
+    console.log('Listing goto warning:', e.message);
+  });
+
+  if (!page.url().includes('/206-woman')) {
+    await page.locator('a[href*="/206-woman"]').first().click();
+    await page.waitForTimeout(10000);
+  }
   console.log('Login page loaded');
 
   await page.fill('input[type="email"]', process.env.JULIAN_EMAIL);
@@ -135,7 +146,10 @@ async function login(page) {
 async function openListing(page, pageNumber = 1) {
   console.log('Opening listing page...');
 
-  const listingUrl = `https://b2bfashion.online/206-woman?page=${pageNumber}`;
+  const listingUrl =
+  pageNumber === 1
+    ? 'https://b2bfashion.online/206-woman'
+    : `https://b2bfashion.online/206-woman?page=${pageNumber}`;
 
   console.log('Opening URL:', listingUrl);
 
