@@ -132,28 +132,34 @@ async function login(page) {
   console.log('Current URL:', page.url());
 }
 
-async function openListing(page) {
+async function openListing(page, pageNumber = 1) {
   console.log('Opening listing page...');
 
-  await page.goto('https://b2bfashion.online/', {
+  const listingUrl = `https://b2bfashion.online/206-woman?page=${pageNumber}`;
+
+  console.log('Opening URL:', listingUrl);
+
+  await page.goto(listingUrl, {
     waitUntil: 'domcontentloaded',
     timeout: 120000
   }).catch(e => {
-    console.log('Home goto warning:', e.message);
+    console.log('Listing goto warning:', e.message);
   });
 
-  await page.waitForTimeout(5000);
+  await page.waitForTimeout(10000);
 
-  await page.locator('a[href*="/206-woman"]').first().click();
-
-  await page.waitForTimeout(30000);
-
-  await page.mouse.wheel(0, 10000);
+  await page.mouse.wheel(0, 15000);
 
   await page.waitForTimeout(5000);
 
   console.log('Listing opened');
   console.log('Current listing URL:', page.url());
+
+  const productCount = await page.locator('.product-miniature').count();
+
+  console.log('Products found on page:', productCount);
+
+  return productCount;
 }
 
 async function clickQuickviews(page) {
@@ -299,8 +305,21 @@ async function run() {
 
   try {
     await login(page);
-    await openListing(page);
-    await clickQuickviews(page);
+    for (let currentPage = 1; currentPage <= 3; currentPage++) {
+
+  console.log('========================');
+  console.log('PAGE:', currentPage);
+  console.log('========================');
+
+  const productCount = await openListing(page, currentPage);
+
+  if (!productCount) {
+    console.log('No products found. Stop pagination.');
+    break;
+  }
+
+  await clickQuickviews(page);
+}
 
     const products = quickviewProducts
       .slice(0, LIMIT_PRODUCTS)
