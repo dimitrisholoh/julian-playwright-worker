@@ -229,7 +229,7 @@ async function clickQuickviews(page) {
       if (await closeBtn.count()) {
         await closeBtn.click({ force: true }).catch(() => {});
         await page.waitForTimeout(1000);
-      
+      }
     } else {
       console.log('Button not visible:', i + 1);
     }
