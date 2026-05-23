@@ -64,7 +64,7 @@ function normalizeProduct(product) {
     supplier_sku: null,
     supplier_product_code: cleanText(productCode),
 
-    brand_raw: null,
+    brand_raw: cleanText(product.brand_name || product.brand || getFeature(product, 'brand')),
     title_raw: cleanText(product.name),
     description_raw: cleanText(product.description),
 
@@ -76,7 +76,7 @@ function normalizeProduct(product) {
     season_raw: getFeature(product, 'season'),
 
     composition_raw: getFeature(product, 'composition'),
-    made_in_raw: getFeature(product, 'made in'),
+    made_in_raw: getFeature(product, 'made in') || getFeature(product, 'made_in') || getFeature(product, 'country') || getFeature(product, 'origin'),
     size_and_fit_raw: getFeature(product, 'size and fit'),
 
     supplier_retail_price: retailPrice,
