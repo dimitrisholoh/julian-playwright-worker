@@ -4,7 +4,7 @@ const crypto = require('crypto');
 
 const SUPPLIER_NAME = 'Julian Fashion Srl';
 const SUPPLIER_SLUG = 'julian-fashion';
-const LIMIT_PRODUCTS = Number(process.env.LIMIT_PRODUCTS || 48);
+const LIMIT_PRODUCTS = Number(process.env.LIMIT_PRODUCTS || 200);
 const MAX_PAGES = Number(process.env.MAX_PAGES || 5);
 
 const START_URL = process.env.JULIAN_START_URL || 'https://b2bfashion.online/';
