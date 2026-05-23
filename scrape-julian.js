@@ -161,6 +161,21 @@ async function openListing(page, pageNumber = 1) {
 
   await page.waitForTimeout(10000);
 
+  const modalText = await page
+    .locator('.quickview, .modal')
+    .first()
+    .innerText()
+    .catch(() => '');
+
+  const modalLines = modalText
+    .split('\n')
+    .map(line => cleanText(line))
+    .filter(Boolean);
+
+  const modalBrand = modalLines[0] || null;
+
+  console.log('Quickview DOM brand:', modalBrand);
+
   if (!page.url().includes('/206-woman')) {
     console.log('Not on woman listing, clicking menu link...');
 
