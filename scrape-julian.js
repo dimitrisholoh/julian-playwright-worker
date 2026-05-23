@@ -77,6 +77,25 @@ function normalizeProduct(product) {
   const finalPrice = toNumber(product.price_amount || product.price);
   const discountPercent = toNumber(product.discount_percentage);
 
+  const imageUrls = [];
+
+  if (Array.isArray(product.images)) {
+
+    for (const image of product.images) {
+      if (typeof image === 'string') imageUrls.push(image);
+      if (image?.large?.url) imageUrls.push(image.large.url);
+      if (image?.medium?.url) imageUrls.push(image.medium.url);
+      if (image?.bySize?.large_default?.url) imageUrls.push(image.bySize.large_default.url);
+      if (image?.url) imageUrls.push(image.url);
+  }
+}
+
+if (product.cover?.large?.url) imageUrls.push(product.cover.large.url);
+if (product.cover?.bySize?.large_default?.url) imageUrls.push(product.cover.bySize.large_default.url);
+if (product.cover?.url) imageUrls.push(product.cover.url);
+
+const images_raw = [...new Set(imageUrls.filter(Boolean))];
+  
   return {
     supplier_name: SUPPLIER_NAME,
     supplier_slug: SUPPLIER_SLUG,
@@ -124,6 +143,7 @@ function normalizeProduct(product) {
     product_key: `${SUPPLIER_SLUG}:${cleanText(productCode)}`,
     product_hash: makeHash(product),
 
+    images_raw,
     raw_json: product,
 
     scrape_status: 'new',
