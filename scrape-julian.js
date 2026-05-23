@@ -303,6 +303,19 @@ async function run() {
     ) {
       try {
         const json = await response.json();
+        const html = json.quickview_html || '';
+
+        const brandMatch = html.match(
+          /<div[^>]*class="[^"]*product-manufacturer[^"]*"[^>]*>\s*<a[^>]*>(.*?)<\/a>/i
+        );
+
+        const extractedBrand = brandMatch
+          ? cleanText(brandMatch[1])
+          : null;
+
+        if (extractedBrand) {
+          json.product.brand = extractedBrand;
+        }
 
         if (json.product) {
           quickviewProducts.push(json.product);
