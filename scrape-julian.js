@@ -396,6 +396,7 @@ async function run() {
       normalizeProduct({
         ...product,
         brand: allQuickviewBrands[index] || product.brand || null
+        images_raw: extractImages(product)
       })
     );
 
