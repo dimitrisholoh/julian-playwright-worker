@@ -60,6 +60,7 @@ function getFeature(product, name) {
 
   return null;
 }
+
 function normalizeProduct(product) {
   const productCode =
     product.reference ||
@@ -83,7 +84,14 @@ function normalizeProduct(product) {
     supplier_sku: null,
     supplier_product_code: cleanText(productCode),
 
-    brand_raw: cleanText(product.brand_name || product.brand || product.manufacturer || product.designer || getFeature(product, 'brand')),
+    brand_raw: cleanText(
+      product.brand_name ||
+      product.brand ||
+      product.manufacturer ||
+      product.designer ||
+      getFeature(product, 'brand')
+    ),
+
     title_raw: cleanText(product.name),
     description_raw: cleanText(product.description),
 
@@ -95,7 +103,12 @@ function normalizeProduct(product) {
     season_raw: getFeature(product, 'season'),
 
     composition_raw: getFeature(product, 'composition'),
-    made_in_raw: getFeature(product, 'made in') || getFeature(product, 'made_in') || getFeature(product, 'country') || getFeature(product, 'origin'),
+    made_in_raw:
+      getFeature(product, 'made in') ||
+      getFeature(product, 'made_in') ||
+      getFeature(product, 'country') ||
+      getFeature(product, 'origin'),
+
     size_and_fit_raw: getFeature(product, 'size and fit'),
 
     supplier_retail_price: retailPrice,
@@ -161,21 +174,6 @@ async function openListing(page, pageNumber = 1) {
 
   await page.waitForTimeout(10000);
 
-  const modalText = await page
-    .locator('.quickview, .modal')
-    .first()
-    .innerText()
-    .catch(() => '');
-
-  const modalLines = modalText
-    .split('\n')
-    .map(line => cleanText(line))
-    .filter(Boolean);
-
-  const modalBrand = modalLines[0] || null;
-
-  console.log('Quickview DOM brand:', modalBrand);
-
   if (!page.url().includes('/206-woman')) {
     console.log('Not on woman listing, clicking menu link...');
 
@@ -235,9 +233,26 @@ async function clickQuickviews(page) {
 
   const productCount = await page.locator('.product-miniature').count();
   const limit = Math.min(productCount, LIMIT_PRODUCTS);
+  const quickviewBrands = [];
 
   for (let i = 0; i < limit; i++) {
     try {
+      const cardText = await page
+        .locator('.product-miniature')
+        .nth(i)
+        .innerText()
+        .catch(() => '');
+
+      const cardLines = cardText
+        .split('\n')
+        .map(line => cleanText(line))
+        .filter(Boolean);
+
+      const cardBrand = cardLines[0] || null;
+      quickviewBrands.push(cardBrand);
+
+      console.log('Listing card brand:', i + 1, cardBrand);
+
       const button = page.locator('.button-action.quick-view').nth(i * 2);
 
       await button.evaluate(el => {
@@ -272,8 +287,11 @@ async function clickQuickviews(page) {
       }
     } catch (error) {
       console.log('Quickview click skipped:', i + 1, error.message);
+      quickviewBrands.push(null);
     }
   }
+
+  return quickviewBrands;
 }
 
 async function sendWebhook(products) {
@@ -308,6 +326,7 @@ async function run() {
 
   const page = await browser.newPage();
   const quickviewProducts = [];
+  const allQuickviewBrands = [];
 
   page.on('response', async (response) => {
     const url = response.url();
@@ -318,28 +337,6 @@ async function run() {
     ) {
       try {
         const json = await response.json();
-        console.log('Quickview JSON keys:', Object.keys(json));
-
-        console.log('Quickview product keys:', json.product ? Object.keys(json.product) : 'NO_PRODUCT');
-
-        console.log('Quickview html keys:', {
-          hasQuickviewHtml: Boolean(json.quickview_html),
-          hasHtml: Boolean(json.html),
-          hasContent: Boolean(json.content),
-        });
-        const html = json.quickview_html || json.html || json.content || '';
-
-        const brandMatch = html.match(
-          /<div[^>]*class="[^"]*product-manufacturer[^"]*"[^>]*>\s*<a[^>]*>(.*?)<\/a>/i
-        );
-
-        const extractedBrand = brandMatch
-          ? cleanText(brandMatch[1])
-          : null;
-
-        if (extractedBrand) {
-          json.product.brand = extractedBrand;
-        }
 
         if (json.product) {
           quickviewProducts.push(json.product);
@@ -371,12 +368,19 @@ async function run() {
         break;
       }
 
-      await clickQuickviews(page);
+      const pageBrands = await clickQuickviews(page);
+      allQuickviewBrands.push(...pageBrands);
     }
 
-    const products = quickviewProducts.map(normalizeProduct);
+    const products = quickviewProducts.map((product, index) =>
+      normalizeProduct({
+        ...product,
+        brand: allQuickviewBrands[index] || product.brand || null
+      })
+    );
 
     console.log('Captured quickview products:', quickviewProducts.length);
+    console.log('Captured listing brands:', allQuickviewBrands.length);
     console.log('Prepared products:', products.length);
 
     if (!products.length) {
@@ -384,6 +388,7 @@ async function run() {
     }
 
     console.log('First product:', {
+      brand_raw: products[0].brand_raw,
       title_raw: products[0].title_raw,
       supplier_product_code: products[0].supplier_product_code,
       supplier_retail_price: products[0].supplier_retail_price,
