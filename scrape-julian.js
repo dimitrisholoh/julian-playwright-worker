@@ -37,10 +37,29 @@ function makeHash(value) {
 }
 
 function getFeature(product, name) {
-  const features = product.grouped_features || {};
-  return cleanText(features[name]?.value || null);
-}
+  const target = String(name).toLowerCase().trim();
 
+  const direct =
+    product[name] ||
+    product[target] ||
+    product[name.replaceAll(' ', '_')] ||
+    product[target.replaceAll(' ', '_')];
+
+  if (direct) return cleanText(direct);
+
+  const features = product.grouped_features || product.features || product.attributes || {};
+
+  for (const [key, item] of Object.entries(features)) {
+    const keyNorm = String(key).toLowerCase().trim();
+    const itemName = String(item?.name || item?.group || item?.label || '').toLowerCase().trim();
+
+    if (keyNorm === target || itemName === target) {
+      return cleanText(item?.value || item?.reference || item?.name || item);
+    }
+  }
+
+  return null;
+}
 function normalizeProduct(product) {
   const productCode =
     product.reference ||
@@ -64,7 +83,7 @@ function normalizeProduct(product) {
     supplier_sku: null,
     supplier_product_code: cleanText(productCode),
 
-    brand_raw: cleanText(product.brand_name || product.brand || getFeature(product, 'brand')),
+    brand_raw: cleanText(product.brand_name || product.brand || product.manufacturer || product.designer || getFeature(product, 'brand')),
     title_raw: cleanText(product.name),
     description_raw: cleanText(product.description),
 
