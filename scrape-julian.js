@@ -303,7 +303,16 @@ async function run() {
     ) {
       try {
         const json = await response.json();
-        const html = json.quickview_html || '';
+        console.log('Quickview JSON keys:', Object.keys(json));
+
+        console.log('Quickview product keys:', json.product ? Object.keys(json.product) : 'NO_PRODUCT');
+
+        console.log('Quickview html keys:', {
+          hasQuickviewHtml: Boolean(json.quickview_html),
+          hasHtml: Boolean(json.html),
+          hasContent: Boolean(json.content),
+        });
+        const html = json.quickview_html || json.html || json.content || '';
 
         const brandMatch = html.match(
           /<div[^>]*class="[^"]*product-manufacturer[^"]*"[^>]*>\s*<a[^>]*>(.*?)<\/a>/i
