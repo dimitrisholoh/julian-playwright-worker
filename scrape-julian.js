@@ -426,8 +426,8 @@ async function run() {
   const page = await browser.newPage();
 
   const quickviewProducts = [];
-  const brandByCode = {};
-  const imagesByCode = {};
+  const allQuickviewBrands = [];
+  const allQuickviewImages = [];
 
   page.on('response', async response => {
     const url = response.url();
