@@ -64,26 +64,38 @@ function getFeature(product, name) {
 function extractImages(product) {
   const images = [];
 
-  if (Array.isArray(product.images)) {
-    product.images.forEach((img, index) => {
-      const url =
-        img.large?.url ||
-        img.medium?.url ||
-        img.bySize?.large_default?.url ||
-        img.url ||
-        img;
+  const addImage = (url, raw = null) => {
+    const cleanUrl = cleanText(url);
+    if (!cleanUrl) return;
+    if (images.some(img => img.url === cleanUrl)) return;
 
-      if (url) {
-        images.push({
-          url: cleanText(url),
-          position: index + 1,
-          type: index === 0 ? 'main' : 'gallery',
-          is_main: index === 0,
-          raw: img
-        });
+    images.push({
+      url: cleanUrl,
+      position: images.length + 1,
+      type: images.length === 0 ? 'main' : 'gallery',
+      is_main: images.length === 0,
+      raw
+    });
+  };
+
+  if (Array.isArray(product.images)) {
+    product.images.forEach(img => {
+      if (typeof img === 'string') addImage(img, img);
+      else {
+        addImage(img?.large?.url, img);
+        addImage(img?.medium?.url, img);
+        addImage(img?.bySize?.large_default?.url, img);
+        addImage(img?.bySize?.home_default?.url, img);
+        addImage(img?.url, img);
       }
     });
   }
+
+  addImage(product.cover?.large?.url, product.cover);
+  addImage(product.cover?.medium?.url, product.cover);
+  addImage(product.cover?.bySize?.large_default?.url, product.cover);
+  addImage(product.cover?.bySize?.home_default?.url, product.cover);
+  addImage(product.cover?.url, product.cover);
 
   return images;
 }
@@ -170,7 +182,6 @@ const images_raw = [...new Set(imageUrls.filter(Boolean))];
     product_key: `${SUPPLIER_SLUG}:${cleanText(productCode)}`,
     product_hash: makeHash(product),
     images_raw: extractImages(product),
-    
     raw_json: product,
 
     scrape_status: 'new',
