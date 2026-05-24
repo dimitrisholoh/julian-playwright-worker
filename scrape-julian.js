@@ -61,6 +61,33 @@ function getFeature(product, name) {
   return null;
 }
 
+function extractImages(product) {
+  const images = [];
+
+  if (Array.isArray(product.images)) {
+    product.images.forEach((img, index) => {
+      const url =
+        img.large?.url ||
+        img.medium?.url ||
+        img.bySize?.large_default?.url ||
+        img.url ||
+        img;
+
+      if (url) {
+        images.push({
+          url: cleanText(url),
+          position: index + 1,
+          type: index === 0 ? 'main' : 'gallery',
+          is_main: index === 0,
+          raw: img
+        });
+      }
+    });
+  }
+
+  return images;
+}
+
 function normalizeProduct(product) {
   const productCode =
     product.reference ||
