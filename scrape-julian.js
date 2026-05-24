@@ -477,11 +477,19 @@ async function run() {
 
     const products = quickviewProducts.map((product, index) => {
       const productImages = allQuickviewImages[index] || [];
-
+      const cleanImages = productImages
+        .filter(Boolean)
+        .filter(url =>
+          url.includes('.jpg') ||
+          url.includes('.jpeg') ||
+          url.includes('.png') ||
+          url.includes('.webp')
+        );
+      
       return normalizeProduct({
         ...product,
         brand: allQuickviewBrands[index] || product.brand || null,
-        images_raw: productImages.length ? productImages : extractImages(product)
+        images_raw: cleanImages.length ? cleanImages : extractImages(product)
       });
     });
 
