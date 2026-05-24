@@ -492,8 +492,7 @@ async function run() {
           brand: product.brand || allQuickviewBrands[index] || null,
           images_raw: cleanImages.length ? cleanImages : extractImages(product)
         });
-      });
-    });
+    })
 
     console.log('Captured quickview products:', quickviewProducts.length);
     console.log('Captured listing brands:', allQuickviewBrands.length);
