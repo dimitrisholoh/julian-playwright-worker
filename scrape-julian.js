@@ -78,10 +78,19 @@ function extractImages(product) {
     });
   };
 
+  if (Array.isArray(product.quickview_images)) {
+    product.quickview_images.forEach(url => addImage(url, null));
+  }
+
+  if (product.card_image) {
+    addImage(product.card_image, null);
+  }
+
   if (Array.isArray(product.images)) {
     product.images.forEach(img => {
-      if (typeof img === 'string') addImage(img, img);
-      else {
+      if (typeof img === 'string') {
+        addImage(img, img);
+      } else {
         addImage(img?.large?.url, img);
         addImage(img?.medium?.url, img);
         addImage(img?.bySize?.large_default?.url, img);
@@ -116,25 +125,6 @@ function normalizeProduct(product) {
   const finalPrice = toNumber(product.price_amount || product.price);
   const discountPercent = toNumber(product.discount_percentage);
 
-  const imageUrls = [];
-
-  if (Array.isArray(product.images)) {
-
-    for (const image of product.images) {
-      if (typeof image === 'string') imageUrls.push(image);
-      if (image?.large?.url) imageUrls.push(image.large.url);
-      if (image?.medium?.url) imageUrls.push(image.medium.url);
-      if (image?.bySize?.large_default?.url) imageUrls.push(image.bySize.large_default.url);
-      if (image?.url) imageUrls.push(image.url);
-  }
-}
-
-if (product.cover?.large?.url) imageUrls.push(product.cover.large.url);
-if (product.cover?.bySize?.large_default?.url) imageUrls.push(product.cover.bySize.large_default.url);
-if (product.cover?.url) imageUrls.push(product.cover.url);
-
-const images_raw = [...new Set(imageUrls.filter(Boolean))];
-  
   return {
     supplier_name: SUPPLIER_NAME,
     supplier_slug: SUPPLIER_SLUG,
@@ -161,6 +151,7 @@ const images_raw = [...new Set(imageUrls.filter(Boolean))];
     season_raw: getFeature(product, 'season'),
 
     composition_raw: getFeature(product, 'composition'),
+
     made_in_raw:
       getFeature(product, 'made in') ||
       getFeature(product, 'made_in') ||
@@ -181,6 +172,7 @@ const images_raw = [...new Set(imageUrls.filter(Boolean))];
 
     product_key: `${SUPPLIER_SLUG}:${cleanText(productCode)}`,
     product_hash: makeHash(product),
+
     images_raw: extractImages(product),
     raw_json: product,
 
@@ -291,7 +283,9 @@ async function clickQuickviews(page) {
 
   const productCount = await page.locator('.product-miniature').count();
   const limit = Math.min(productCount, LIMIT_PRODUCTS);
+
   const quickviewBrands = [];
+  const quickviewImages = [];
 
   for (let i = 0; i < limit; i++) {
     try {
@@ -342,6 +336,38 @@ async function clickQuickviews(page) {
 
         await page.waitForTimeout(3000);
 
+        const modalImages = await page
+          .locator('.quickview img, .modal img')
+          .evaluateAll(imgs =>
+            imgs
+              .map(img =>
+                img.src ||
+                img.getAttribute('data-src') ||
+                img.getAttribute('data-full-size-image-url')
+              )
+              .filter(Boolean)
+          )
+          .catch(() => []);
+
+        const cleanModalImages = [...new Set(
+          modalImages
+            .map(url => cleanText(url))
+            .filter(Boolean)
+        )];
+
+        if (!cleanModalImages.length && cardImage) {
+          cleanModalImages.push(cardImage);
+        }
+
+        quickviewImages.push(cleanModalImages);
+
+        console.log(
+          'Quickview images:',
+          i + 1,
+          cleanModalImages.length,
+          cleanModalImages
+        );
+
         const closeBtn = page
           .locator('.quickview .close, .modal .close, button.close')
           .first();
@@ -352,14 +378,19 @@ async function clickQuickviews(page) {
         }
       } else {
         console.log('Button not visible:', i + 1);
+        quickviewImages.push(cardImage ? [cardImage] : []);
       }
     } catch (error) {
       console.log('Quickview click skipped:', i + 1, error.message);
       quickviewBrands.push(null);
+      quickviewImages.push([]);
     }
   }
 
-  return quickviewBrands;
+  return {
+    brands: quickviewBrands,
+    images: quickviewImages
+  };
 }
 
 async function sendWebhook(products) {
@@ -393,10 +424,12 @@ async function run() {
   });
 
   const page = await browser.newPage();
+
   const quickviewProducts = [];
   const allQuickviewBrands = [];
+  const allQuickviewImages = [];
 
-  page.on('response', async (response) => {
+  page.on('response', async response => {
     const url = response.url();
 
     if (
@@ -436,20 +469,24 @@ async function run() {
         break;
       }
 
-      const pageBrands = await clickQuickviews(page);
-      allQuickviewBrands.push(...pageBrands);
+      const pageData = await clickQuickviews(page);
+
+      allQuickviewBrands.push(...pageData.brands);
+      allQuickviewImages.push(...pageData.images);
     }
 
     const products = quickviewProducts.map((product, index) =>
       normalizeProduct({
         ...product,
         brand: allQuickviewBrands[index] || product.brand || null,
-        images_raw: extractImages(product)
+        quickview_images: allQuickviewImages[index] || [],
+        card_image: allQuickviewImages[index]?.[0] || null
       })
     );
 
     console.log('Captured quickview products:', quickviewProducts.length);
     console.log('Captured listing brands:', allQuickviewBrands.length);
+    console.log('Captured image groups:', allQuickviewImages.length);
     console.log('Prepared products:', products.length);
 
     if (!products.length) {
@@ -465,11 +502,11 @@ async function run() {
       color_raw: products[0].color_raw,
       composition_raw: products[0].composition_raw,
       made_in_raw: products[0].made_in_raw,
-      size_and_fit_raw: products[0].size_and_fit_raw
+      size_and_fit_raw: products[0].size_and_fit_raw,
+      images_count: products[0].images_raw.length,
+      images_raw: products[0].images_raw
     });
-    
-    //console.log('First product FULL JSON:', JSON.stringify(products[0], null, 2));
-    
+
     await sendWebhook(products);
   } finally {
     await browser.close();
