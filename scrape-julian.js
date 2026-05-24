@@ -4,7 +4,7 @@ const crypto = require('crypto');
 
 const SUPPLIER_NAME = 'Julian Fashion Srl';
 const SUPPLIER_SLUG = 'julian-fashion';
-const LIMIT_PRODUCTS = Number(process.env.LIMIT_PRODUCTS || 10);
+const LIMIT_PRODUCTS = Number(process.env.LIMIT_PRODUCTS || 3);
 const MAX_PAGES = Number(process.env.MAX_PAGES || 1);
 
 const START_URL = process.env.JULIAN_START_URL || 'https://b2bfashion.online/';
@@ -447,6 +447,7 @@ async function run() {
             json.product.name || 'NO_NAME',
             json.product.reference || 'NO_REF'
           );
+          console.log('Quickview raw product:', JSON.stringify(json.product, null, 2));
         }
       } catch (error) {
         console.log(' JSON parse failed:', error.message);
