@@ -361,8 +361,6 @@ async function clickQuickviews(page) {
 
         quickviewImages.push(cleanModalImages);
         console.log('Quickview images:', i + 1, cleanModalImages.length);
-        
-        );
 
         const closeBtn = page
           .locator('.quickview .close, .modal .close, button.close')
