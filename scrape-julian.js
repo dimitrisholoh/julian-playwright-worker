@@ -475,14 +475,15 @@ async function run() {
       allQuickviewImages.push(...pageData.images);
     }
 
-    const products = quickviewProducts.map((product, index) =>
-      normalizeProduct({
+    const products = quickviewProducts.map((product, index) => {
+      const productImages = allQuickviewImages[index] || [];
+
+      return normalizeProduct({
         ...product,
         brand: allQuickviewBrands[index] || product.brand || null,
-        images_raw: allQuickviewImages[index] || extractImages(product)
-      })  
-      
-    );
+        images_raw: productImages.length ? productImages : extractImages(product)
+      });
+    });
 
     console.log('Captured quickview products:', quickviewProducts.length);
     console.log('Captured listing brands:', allQuickviewBrands.length);
