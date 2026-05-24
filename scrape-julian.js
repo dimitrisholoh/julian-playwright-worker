@@ -484,6 +484,15 @@ async function run() {
             url.includes('.webp')
           );
 
+        console.log('BRAND DEBUG:', {
+          code: product.reference || product.spu || product.id_product || product.id,
+          brand_name: product.brand_name,
+          brand: product.brand,
+          manufacturer: product.manufacturer,
+          designer: product.designer,
+          listing_brand: allQuickviewBrands[index]
+        });
+        
         return normalizeProduct({
           ...product,
           brand:
