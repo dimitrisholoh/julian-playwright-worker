@@ -311,6 +311,16 @@ async function clickQuickviews(page) {
 
       console.log('Listing card brand:', i + 1, cardBrand);
 
+      const cardImage = await page
+        .locator('.product-miniature')
+        .nth(i)
+        .locator('img')
+        .first()
+        .getAttribute('src')
+        .catch(() => null);
+
+      console.log('Listing card image:', i + 1, cardImage);
+
       const button = page.locator('.button-action.quick-view').nth(i * 2);
 
       await button.evaluate(el => {
@@ -458,7 +468,7 @@ async function run() {
       size_and_fit_raw: products[0].size_and_fit_raw
     });
     
-    console.log('First product FULL JSON:', JSON.stringify(products[0], null, 2));
+    //console.log('First product FULL JSON:', JSON.stringify(products[0], null, 2));
     
     await sendWebhook(products);
   } finally {
