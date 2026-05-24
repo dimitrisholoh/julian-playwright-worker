@@ -142,8 +142,8 @@ const images_raw = [...new Set(imageUrls.filter(Boolean))];
 
     product_key: `${SUPPLIER_SLUG}:${cleanText(productCode)}`,
     product_hash: makeHash(product),
-
-    images_raw,
+    images_raw: extractImages(product),
+    
     raw_json: product,
 
     scrape_status: 'new',
