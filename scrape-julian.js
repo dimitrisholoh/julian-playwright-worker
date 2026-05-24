@@ -360,12 +360,8 @@ async function clickQuickviews(page) {
         }
 
         quickviewImages.push(cleanModalImages);
-
-        console.log(
-          'Quickview images:',
-          i + 1,
-          cleanModalImages.length,
-          cleanModalImages
+        console.log('Quickview images:', i + 1, cleanModalImages.length);
+        
         );
 
         const closeBtn = page
