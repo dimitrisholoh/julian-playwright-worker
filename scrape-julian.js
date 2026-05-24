@@ -457,7 +457,9 @@ async function run() {
       made_in_raw: products[0].made_in_raw,
       size_and_fit_raw: products[0].size_and_fit_raw
     });
-
+    
+    console.log('First product FULL JSON:', JSON.stringify(products[0], null, 2));
+    
     await sendWebhook(products);
   } finally {
     await browser.close();
