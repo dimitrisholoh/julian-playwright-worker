@@ -489,10 +489,16 @@ async function run() {
 
         return normalizeProduct({
           ...product,
-          brand: product.brand || allQuickviewBrands[index] || null,
+          brand:
+            product.brand_name ||
+            product.brand ||
+            product.manufacturer ||
+            product.designer ||
+            allQuickviewBrands[index] ||
+            null,
           images_raw: cleanImages.length ? cleanImages : extractImages(product)
         });
-    })
+    });
 
     console.log('Captured quickview products:', quickviewProducts.length);
     console.log('Captured listing brands:', allQuickviewBrands.length);
