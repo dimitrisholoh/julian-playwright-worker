@@ -210,8 +210,8 @@ async function openListing(page, pageNumber = 1) {
 
   const listingUrl =
     pageNumber === 1
-      ? 'https://b2bfashion.online/206-woman'
-      : `https://b2bfashion.online/206-woman?page=${pageNumber}`;
+      ? 'https://b2bfashion.online/306-all'
+      : `https://b2bfashion.online/306-all?page=${pageNumber}`;
 
   console.log('Opening URL:', listingUrl);
 
@@ -223,20 +223,6 @@ async function openListing(page, pageNumber = 1) {
   });
 
   await page.waitForTimeout(10000);
-
-  if (!page.url().includes('/206-woman')) {
-    console.log('Not on woman listing, clicking menu link...');
-
-    await page
-      .locator('a[href*="/206-woman"]')
-      .first()
-      .click({ force: true, timeout: 30000 })
-      .catch(e => {
-        console.log('Woman menu click warning:', e.message);
-      });
-
-    await page.waitForTimeout(10000);
-  }
 
   await page.mouse.wheel(0, 15000);
   await page.waitForTimeout(5000);
@@ -441,7 +427,7 @@ async function run() {
             json.product.name || 'NO_NAME',
             json.product.reference || 'NO_REF'
           );
-          console.log('Quickview raw product:', JSON.stringify(json.product, null, 2));
+  
         }
       } catch (error) {
         console.log(' JSON parse failed:', error.message);
