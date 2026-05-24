@@ -173,7 +173,7 @@ function normalizeProduct(product) {
     product_key: `${SUPPLIER_SLUG}:${cleanText(productCode)}`,
     product_hash: makeHash(product),
 
-    images_raw: extractImages(product),
+    images_raw: product.images_raw || extractImages(product),
     raw_json: product,
 
     scrape_status: 'new',
@@ -479,9 +479,9 @@ async function run() {
       normalizeProduct({
         ...product,
         brand: allQuickviewBrands[index] || product.brand || null,
-        quickview_images: allQuickviewImages[index] || [],
-        card_image: allQuickviewImages[index]?.[0] || null
-      })
+        images_raw: allQuickviewImages[index] || extractImages(product)
+      })  
+      
     );
 
     console.log('Captured quickview products:', quickviewProducts.length);
