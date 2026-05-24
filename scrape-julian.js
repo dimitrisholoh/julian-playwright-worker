@@ -426,8 +426,8 @@ async function run() {
   const page = await browser.newPage();
 
   const quickviewProducts = [];
-  const allQuickviewBrands = [];
-  const allQuickviewImages = [];
+  const brandByCode = {};
+  const imagesByCode = {};
 
   page.on('response', async response => {
     const url = response.url();
@@ -449,7 +449,7 @@ async function run() {
           );
         }
       } catch (error) {
-        console.log('Quickview JSON parse failed:', error.message);
+        console.log(' JSON parse failed:', error.message);
       }
     }
   });
@@ -473,23 +473,25 @@ async function run() {
 
       allQuickviewBrands.push(...pageData.brands);
       allQuickviewImages.push(...pageData.images);
-    }
+      }
 
-    const products = quickviewProducts.map((product, index) => {
-      const productImages = allQuickviewImages[index] || [];
-      const cleanImages = productImages
-        .filter(Boolean)
-        .filter(url =>
-          url.includes('.jpg') ||
-          url.includes('.jpeg') ||
-          url.includes('.png') ||
-          url.includes('.webp')
-        );
-      
-      return normalizeProduct({
-        ...product,
-        brand: allQuickviewBrands[index] || product.brand || null,
-        images_raw: cleanImages.length ? cleanImages : extractImages(product)
+      const products = quickviewProducts.map((product, index) => {
+        const productImages = allQuickviewImages[index] || [];
+
+        const cleanImages = productImages
+          .filter(Boolean)
+          .filter(url =>
+            url.includes('.jpg') ||
+            url.includes('.jpeg') ||
+            url.includes('.png') ||
+            url.includes('.webp')
+          );
+
+        return normalizeProduct({
+          ...product,
+          brand: product.brand || allQuickviewBrands[index] || null,
+          images_raw: cleanImages.length ? cleanImages : extractImages(product)
+        });
       });
     });
 
