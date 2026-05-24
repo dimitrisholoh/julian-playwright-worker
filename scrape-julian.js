@@ -395,7 +395,7 @@ async function run() {
     const products = quickviewProducts.map((product, index) =>
       normalizeProduct({
         ...product,
-        brand: allQuickviewBrands[index] || product.brand || null
+        brand: allQuickviewBrands[index] || product.brand || null,
         images_raw: extractImages(product)
       })
     );
