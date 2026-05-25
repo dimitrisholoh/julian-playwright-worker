@@ -217,17 +217,14 @@ async function openListing(page, pageNumber = 1) {
 
   await page.waitForTimeout(8000);
 
-  console.log('Clicking ALL CATEGORIES...');
+  console.log('Opening ALL CATEGORIES via browser location...');
 
-  await page
-    .locator('a:has-text("ALL CATEGORIES"), a:has-text("All categories"), a[href*="/306-all"]')
-    .first()
-    .click({ force: true, timeout: 30000 })
-    .catch(e => {
-      console.log('All categories click warning:', e.message);
-    });
+await page.evaluate(() => {
+  window.location.href = '/306-all';
+});
 
-  await page.waitForTimeout(12000);
+await page.waitForLoadState('domcontentloaded', { timeout: 120000 }).catch(() => {});
+await page.waitForTimeout(15000);
 
   if (pageNumber > 1) {
     const pageUrl = `https://b2bfashion.online/306-all?page=${pageNumber}`;
