@@ -208,21 +208,40 @@ async function login(page) {
 async function openListing(page, pageNumber = 1) {
   console.log('Opening listing page...');
 
-  const listingUrl =
-    pageNumber === 1
-      ? 'https://b2bfashion.online/306-all'
-      : `https://b2bfashion.online/306-all?page=${pageNumber}`;
-
-  console.log('Opening URL:', listingUrl);
-
-  await page.goto(listingUrl, {
+  await page.goto('https://b2bfashion.online/', {
     waitUntil: 'domcontentloaded',
     timeout: 120000
   }).catch(e => {
-    console.log('Listing goto warning:', e.message);
+    console.log('Home goto warning:', e.message);
   });
 
-  await page.waitForTimeout(10000);
+  await page.waitForTimeout(8000);
+
+  console.log('Clicking ALL CATEGORIES...');
+
+  await page
+    .locator('a:has-text("ALL CATEGORIES"), a:has-text("All categories"), a[href*="/306-all"]')
+    .first()
+    .click({ force: true, timeout: 30000 })
+    .catch(e => {
+      console.log('All categories click warning:', e.message);
+    });
+
+  await page.waitForTimeout(12000);
+
+  if (pageNumber > 1) {
+    const pageUrl = `https://b2bfashion.online/306-all?page=${pageNumber}`;
+    console.log('Opening page URL:', pageUrl);
+
+    await page.goto(pageUrl, {
+      waitUntil: 'domcontentloaded',
+      timeout: 120000
+    }).catch(e => {
+      console.log('Pagination goto warning:', e.message);
+    });
+
+    await page.waitForTimeout(10000);
+  }
 
   await page.mouse.wheel(0, 15000);
   await page.waitForTimeout(5000);
