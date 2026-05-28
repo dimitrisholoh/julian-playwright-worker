@@ -22,8 +22,8 @@ async function selectPopupValues(page, labelText, values) {
 
   for (const value of values) {
     const search = page
-      .locator('.dataTables_filter input, input[type="search"]')
-      .first();
+      .locator('input[type="search"]:visible')
+      .last();
 
     await search.waitFor({ state: 'visible', timeout: 10000 });
     await search.click({ force: true });
