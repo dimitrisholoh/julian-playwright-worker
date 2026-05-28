@@ -24,11 +24,22 @@ await page.waitForTimeout(1000);
   await page.waitForTimeout(1000);
 
   for (const value of values) {
-    const search = page.locator('input[type="search"], input').last();
+    const search = page
+      .locator('.dataTables_filter input, input[type="search"]')
+      .filter({ hasNotText: '' })
+      .first();
+
+    await search.waitFor({ state: 'visible', timeout: 10000 });
+    await search.click({ force: true });
     await search.fill(value);
     await page.waitForTimeout(500);
 
-    await page.locator(`text=${value}`).first().click({ force: true, timeout: 10000 });
+    await page
+      .locator('.dataTables_scrollBody, table, .modal')
+      .locator(`text="${value}"`)
+      .first()
+      .click({ force: true, timeout: 10000 });
+   
     await page.waitForTimeout(500);
   }
 
