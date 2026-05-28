@@ -101,6 +101,35 @@ async function run() {
     console.log('Wholesale blocks found:', items);
     console.log('Images found:', images);
 
+    const products = [
+      {
+        supplier_slug: 'doublef',
+        brand_raw: 'TEST',
+        title_raw: 'DoubleF test product',
+        supplier_product_code: 'DOUBLEF_TEST_001',
+        images_raw: [],
+        variants_raw: [],
+        raw_json: {
+          result_url: page.url(),
+          body_preview: bodyText.slice(0, 2000)
+        }
+      }
+    ];
+
+    console.log('Sending webhook to n8n...');
+
+    await fetch(process.env.N8N_WEBHOOK_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        products
+      })
+    });
+
+    console.log('Webhook sent successfully');
+
     console.log('DoubleF filter test completed');
   } catch (error) {
     console.error('ERROR:', error.message);
