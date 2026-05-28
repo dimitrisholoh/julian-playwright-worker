@@ -103,16 +103,49 @@ async function run() {
 
     const products = [
       {
+        supplier_name: 'DoubleF',
         supplier_slug: 'doublef',
+        supplier_sku: null,
+        supplier_product_code: 'DOUBLEF_TEST_001',
+
         brand_raw: 'TEST',
         title_raw: 'DoubleF test product',
-        supplier_product_code: 'DOUBLEF_TEST_001',
+        description_raw: null,
+
+        gender_raw: null,
+        category_raw: null,
+        subcategory_raw: null,
+        type_raw: null,
+        color_raw: null,
+        season_raw: null,
+
+        composition_raw: null,
+        made_in_raw: null,
+        size_and_fit_raw: null,
+
+        supplier_retail_price: null,
+        supplier_final_price: null,
+        supplier_discount_percent: null,
+
+        currency: 'EUR',
+        is_sale: false,
+
+        supplier_product_url: page.url(),
+        listing_url: page.url(),
+
+        product_key: 'doublef:DOUBLEF_TEST_001',
+        product_hash: 'doublef_test_001',
+
         images_raw: [],
-        variants_raw: [],
         raw_json: {
           result_url: page.url(),
           body_preview: bodyText.slice(0, 2000)
-        }
+        },
+
+        scrape_status: 'new',
+        is_active: true,
+        is_archived: false,
+        scraped_at: new Date().toISOString()
       }
     ];
 
