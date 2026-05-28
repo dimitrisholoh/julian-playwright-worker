@@ -326,7 +326,10 @@ async function run() {
     console.log('After login title:', await page.title());
 
     await selectPopupValues(page, 'Brands', TEST_BRANDS);
+    console.log('Brands selected OK');
+
     await selectPopupValues(page, 'Season', TEST_SEASONS);
+    console.log('Season selected OK');
 
     console.log('Clicking Search...');
     await page.locator('button:has-text("Search")').click({ force: true });
