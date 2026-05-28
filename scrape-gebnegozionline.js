@@ -1,8 +1,8 @@
 const { chromium } = require('playwright');
 
-const START_URL = process.env.DOUBLEF_LOGIN_URL || 'http://93.46.41.5:1995/home';
-const LOGIN = process.env.DOUBLEF_LOGIN;
-const PASSWORD = process.env.DOUBLEF_PASSWORD;
+const START_URL = process.env.GEBNEGOZIONLINE_LOGIN_URL || 'http://93.46.41.5:1995/home';
+const LOGIN = process.env.EBNEGOZIONLINE_LOGIN;
+const PASSWORD = process.env.GEBNEGOZIONLINE_PASSWORD;
 
 const TEST_BRANDS = ['GUCCI', 'ZEGNA'];
 const TEST_SEASONS = ['26S', '25S'];
@@ -48,7 +48,7 @@ async function run() {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1200 } });
 
   try {
-    console.log('Opening DoubleF...');
+    console.log('Opening Gebnegozionline...');
     await page.goto(START_URL);
 
     await page.fill('input[type="text"]', LOGIN);
@@ -103,13 +103,13 @@ async function run() {
 
     const products = [
       {
-        supplier_name: 'DoubleF',
-        supplier_slug: 'doublef',
+        supplier_name: 'Gebnegozionline',
+        supplier_slug: 'gebnegozionline',
         supplier_sku: null,
-        supplier_product_code: 'DOUBLEF_TEST_001',
+        supplier_product_code: 'GEBNE_TEST_001',
 
         brand_raw: 'TEST',
-        title_raw: 'DoubleF test product',
+        title_raw: 'Gebne test product',
         description_raw: null,
 
         gender_raw: null,
@@ -133,8 +133,8 @@ async function run() {
         supplier_product_url: page.url(),
         listing_url: page.url(),
 
-        product_key: 'doublef:DOUBLEF_TEST_001',
-        product_hash: 'doublef_test_001',
+        product_key: 'gebnegozionline:GEBNE_TEST_001',
+        product_hash: 'gebnegozionline_test_001',
 
         images_raw: [],
         raw_json: {
