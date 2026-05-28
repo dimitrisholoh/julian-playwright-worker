@@ -352,13 +352,14 @@ async function run() {
       title_raw: products[0].title_raw,
       supplier_final_price: products[0].supplier_final_price,
       supplier_retail_price: products[0].supplier_retail_price,
-      images_count: products[0].images_raw.length,
-      variants_count: products[0].variants_raw.length
+      images_count: (products[0].images_raw || []).length,
+      variants_count: (products[0].raw_json?.variants_raw || []).length
     });
 
     await sendWebhook(products);
 
     console.log('Gebnegozionline scrape completed');
+    
   } catch (error) {
     console.error('ERROR:', error.message);
     process.exitCode = 1;
@@ -367,4 +368,12 @@ async function run() {
   }
 }
 
-run();
+run()
+  .then(() => {
+    console.log('Gebnegozionline scraper finished successfully');
+    process.exit(0);
+  })
+  .catch(error => {
+    console.error('Fatal error:', error.message);
+    process.exit(1);
+  });
