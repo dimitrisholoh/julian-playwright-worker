@@ -1,60 +1,80 @@
 const { chromium } = require('playwright');
 
-(async () => {
-  console.log('Starting DoubleF scraper...');
+const START_URL = process.env.DOUBLEF_LOGIN_URL || 'http://93.46.41.5:1995/home';
+const LOGIN = process.env.DOUBLEF_LOGIN;
+const PASSWORD = process.env.DOUBLEF_PASSWORD;
 
-  const browser = await chromium.launch({
-    headless: true
-  });
+const TEST_BRANDS = ['GUCCI', 'ZEGNA'];
+const TEST_SEASONS = ['26S', '25S'];
 
-  const page = await browser.newPage();
+async function selectPopupValues(page, labelText, values) {
+  console.log(`Selecting ${labelText}:`, values);
+
+  await page.locator(`text=${labelText}`).locator('..').locator('text=+').click({ force: true });
+  await page.waitForTimeout(1000);
+
+  for (const value of values) {
+    const search = page.locator('input[type="search"], input').last();
+    await search.fill(value);
+    await page.waitForTimeout(500);
+
+    await page.locator(`text="${value}"`).first().click({ force: true });
+    await page.waitForTimeout(500);
+  }
+
+  await page.keyboard.press('Escape').catch(() => {});
+  await page.waitForTimeout(500);
+}
+
+async function run() {
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1200 } });
 
   try {
-    const url = process.env.DOUBLEF_LOGIN_URL;
-    const email = process.env.DOUBLEF_EMAIL;
-    const password = process.env.DOUBLEF_PASSWORD;
-
-    console.log('Opening login page...');
-    await page.goto(url, {
-      waitUntil: 'networkidle',
-      timeout: 120000
-    });
+    console.log('Opening DoubleF...');
+    await page.goto(START_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
 
     console.log('Current URL:', page.url());
 
-    await page.fill('input[type="text"]', email);
-    await page.fill('input[type="password"]', password);
+    if (page.url().includes('/login')) {
+      console.log('Login page detected');
 
-    console.log('Credentials filled');
+      await page.locator('input').nth(0).fill(LOGIN);
+      await page.locator('input').nth(1).fill(PASSWORD);
 
-    await page.click('button');
-
-    await page.waitForTimeout(5000);
+      await page.locator('button').first().click({ force: true });
+      await page.waitForTimeout(5000);
+    }
 
     console.log('After login URL:', page.url());
+    console.log('Title:', await page.title());
 
-    const title = await page.title();
-    console.log('Title:', title);
+    await selectPopupValues(page, 'Brands', TEST_BRANDS);
+    await selectPopupValues(page, 'Season', TEST_SEASONS);
+
+    console.log('Clicking Search...');
+    await page.locator('button:has-text("Search")').click({ force: true });
+
+    await page.waitForTimeout(10000);
+
+    console.log('Result URL:', page.url());
+    console.log('Title:', await page.title());
 
     const bodyText = await page.locator('body').innerText();
+    console.log('Body preview:', bodyText.slice(0, 2000));
 
-    console.log('===== PAGE PREVIEW =====');
-    console.log(bodyText.slice(0, 5000));
+    const items = await page.locator('text=Whole Sale').count();
+    const images = await page.locator('img').count();
 
-    const links = await page.locator('a').count();
-    const buttons = await page.locator('button').count();
-    const inputs = await page.locator('input').count();
+    console.log('Wholesale blocks found:', items);
+    console.log('Images found:', images);
 
-    console.log('===== COUNTS =====');
-    console.log('Links:', links);
-    console.log('Buttons:', buttons);
-    console.log('Inputs:', inputs);
-
-    console.log('DoubleF login test completed');
-
+    console.log('DoubleF filter test completed');
   } catch (error) {
-    console.error('ERROR:', error);
+    console.error('ERROR:', error.message);
+  } finally {
+    await browser.close();
   }
+}
 
-  await browser.close();
-})();
+run();
