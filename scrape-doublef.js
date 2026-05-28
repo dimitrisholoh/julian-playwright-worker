@@ -42,7 +42,22 @@ async function run() {
 
   try {
     console.log('Opening DoubleF...');
-    await page.goto(START_URL, { waitUntil: 'domcontentloaded', timeout: 120000 });
+    await page.goto(START_URL);
+
+    await page.fill('input[type="text"]', LOGIN);
+    await page.fill('input[type="password"]', PASSWORD);
+
+    await page.click('button[type="submit"], input[type="submit"], button:has-text("Login")', {
+      force: true,
+      timeout: 10000
+    });
+
+    await page.waitForTimeout(5000);
+
+    console.log('After login URL:', page.url());
+    console.log('After login title:', await page.title());
+
+    await selectPopupValues(page, 'Brands', TEST_BRANDS);
 
     console.log('Current URL:', page.url());
 
