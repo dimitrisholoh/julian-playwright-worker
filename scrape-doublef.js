@@ -11,16 +11,27 @@ const { chromium } = require('playwright');
 
   try {
     const url = process.env.DOUBLEF_LOGIN_URL;
+    const email = process.env.DOUBLEF_EMAIL;
+    const password = process.env.DOUBLEF_PASSWORD;
 
-    console.log('Opening page...');
-    console.log('URL:', url);
-
+    console.log('Opening login page...');
     await page.goto(url, {
       waitUntil: 'networkidle',
       timeout: 120000
     });
 
     console.log('Current URL:', page.url());
+
+    await page.fill('input[type="text"]', email);
+    await page.fill('input[type="password"]', password);
+
+    console.log('Credentials filled');
+
+    await page.click('button');
+
+    await page.waitForTimeout(5000);
+
+    console.log('After login URL:', page.url());
 
     const title = await page.title();
     console.log('Title:', title);
@@ -30,16 +41,16 @@ const { chromium } = require('playwright');
     console.log('===== PAGE PREVIEW =====');
     console.log(bodyText.slice(0, 5000));
 
-    const inputs = await page.locator('input').count();
-    const selects = await page.locator('select').count();
+    const links = await page.locator('a').count();
     const buttons = await page.locator('button').count();
+    const inputs = await page.locator('input').count();
 
-    console.log('===== ELEMENT COUNTS =====');
-    console.log('Inputs:', inputs);
-    console.log('Selects:', selects);
+    console.log('===== COUNTS =====');
+    console.log('Links:', links);
     console.log('Buttons:', buttons);
+    console.log('Inputs:', inputs);
 
-    console.log('DoubleF test completed');
+    console.log('DoubleF login test completed');
 
   } catch (error) {
     console.error('ERROR:', error);
