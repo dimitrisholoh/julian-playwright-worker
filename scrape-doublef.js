@@ -10,7 +10,15 @@ const TEST_SEASONS = ['26S', '25S'];
 async function selectPopupValues(page, labelText, values) {
   console.log(`Selecting ${labelText}:`, values);
 
-  await page.locator(`text=${labelText}`).locator('..').locator('text=+').click({ force: true });
+  const plusButtons = page.locator('text=+');
+
+  if (labelText === 'Brands') {
+  await plusButtons.nth(0).click({ force: true, timeout: 10000 });
+  }
+
+if (labelText === 'Season') {
+  await plusButtons.nth(1).click({ force: true, timeout: 10000 });
+}
   await page.waitForTimeout(1000);
 
   for (const value of values) {
@@ -18,7 +26,7 @@ async function selectPopupValues(page, labelText, values) {
     await search.fill(value);
     await page.waitForTimeout(500);
 
-    await page.locator(`text="${value}"`).first().click({ force: true });
+    await page.locator(`text=${value}`).first().click({ force: true, timeout: 10000 });
     await page.waitForTimeout(500);
   }
 
