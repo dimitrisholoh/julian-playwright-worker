@@ -10,23 +10,19 @@ const TEST_SEASONS = ['26S', '25S'];
 async function selectPopupValues(page, labelText, values) {
   console.log(`Selecting ${labelText}:`, values);
 
-  const plusButtons = page.locator('.fa-plus, [class*="plus"], i');
+  const label = page.locator(`text=${labelText}`).first();
+  const box = await label.boundingBox();
 
-  if (labelText === 'Brands') {
-  await plusButtons.nth(0).click({ force: true, timeout: 15000 });
+  if (!box) {
+    throw new Error(`${labelText} label not found`);
   }
 
-  if (labelText === 'Season') {
-  await plusButtons.nth(1).click({ force: true, timeout: 15000 });
-  }
-
-await page.waitForTimeout(1000);
+  await page.mouse.click(box.x + 190, box.y + 10);
   await page.waitForTimeout(1000);
 
   for (const value of values) {
     const search = page
       .locator('.dataTables_filter input, input[type="search"]')
-      .filter({ hasNotText: '' })
       .first();
 
     await search.waitFor({ state: 'visible', timeout: 10000 });
