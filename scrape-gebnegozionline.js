@@ -1,7 +1,7 @@
 const { chromium } = require('playwright');
 
 const START_URL = process.env.GEBNEGOZIONLINE_LOGIN_URL || 'http://93.46.41.5:1995/home';
-const LOGIN = process.env.EBNEGOZIONLINE_LOGIN;
+const LOGIN = process.env.GEBNEGOZIONLINE_LOGIN;
 const PASSWORD = process.env.GEBNEGOZIONLINE_PASSWORD;
 
 const TEST_BRANDS = ['GUCCI', 'ZEGNA'];
@@ -163,7 +163,7 @@ async function run() {
 
     console.log('Webhook sent successfully');
 
-    console.log('DoubleF filter test completed');
+    console.log('Gebnegozionline filter test completed');
   } catch (error) {
     console.error('ERROR:', error.message);
   } finally {
