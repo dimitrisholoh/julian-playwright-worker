@@ -10,7 +10,7 @@ const TEST_SEASONS = ['26S', '25S'];
 async function selectPopupValues(page, labelText, values) {
   console.log(`Selecting ${labelText}:`, values);
 
-  const plusButtons = page.locator('button, a, span, div').filter({ hasText: '+' });
+  const plusButtons = page.locator('text=+');
 
   if (labelText === 'Brands') {
   await plusButtons.nth(0).click({ force: true, timeout: 15000 });
