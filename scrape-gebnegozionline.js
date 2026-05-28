@@ -244,12 +244,12 @@ async function extractProducts(page) {
       product_hash: makeHash({ productCode, text }),
 
       images_raw: imagesRaw,
-      variants_raw: variantsRaw,
 
       raw_json: {
         text,
         lines,
-        url: page.url()
+        url: page.url(),
+        variants_raw: variantsRaw
       },
 
       scrape_status: 'new',
