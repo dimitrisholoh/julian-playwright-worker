@@ -4,10 +4,12 @@ const crypto = require('crypto');
 
 const SUPPLIER_NAME = 'Julian Fashion Srl';
 const SUPPLIER_SLUG = 'julian-fashion';
+
 const LIMIT_PRODUCTS = Number(process.env.LIMIT_PRODUCTS || 48);
 const MAX_PAGES = Number(process.env.MAX_PAGES || 1);
 
 const START_URL = process.env.JULIAN_START_URL || 'https://b2bfashion.online/';
+const LISTING_URL = 'https://b2bfashion.online/306-all';
 
 function cleanText(value) {
   if (value === null || value === undefined) return null;
@@ -34,6 +36,27 @@ function makeHash(value) {
     .createHash('sha256')
     .update(JSON.stringify(value))
     .digest('hex');
+}
+
+function detectCodeFromLines(lines) {
+  return (
+    lines.find(line =>
+      /[A-Z0-9]{5,}/i.test(line) &&
+      !line.includes('€') &&
+      !line.includes('%')
+    ) || null
+  );
+}
+
+function detectTitleFromLines(lines) {
+  return (
+    lines.find(line =>
+      line &&
+      !line.includes('€') &&
+      !line.includes('%') &&
+      !/[A-Z0-9]{8,}/.test(line)
+    ) || null
+  );
 }
 
 function getFeature(product, name) {
@@ -78,6 +101,13 @@ function extractImages(product) {
     });
   };
 
+  if (Array.isArray(product.images_raw)) {
+    product.images_raw.forEach(img => {
+      if (typeof img === 'string') addImage(img, img);
+      else addImage(img?.url, img);
+    });
+  }
+
   if (Array.isArray(product.quickview_images)) {
     product.quickview_images.forEach(url => addImage(url, null));
   }
@@ -111,36 +141,49 @@ function extractImages(product) {
 
 function normalizeProduct(product) {
   const productCode =
-    product.reference ||
-    product.spu ||
-    product.id_product ||
-    product.id;
+    cleanText(
+      product.reference ||
+      product.spu ||
+      product.id_product ||
+      product.id ||
+      product.card_reference
+    );
 
   const retailPrice = toNumber(
     product.price_without_reduction ||
     product.regular_price ||
-    product.wholesale_price
+    product.wholesale_price ||
+    product.card_retail_price
   );
 
-  const finalPrice = toNumber(product.price_amount || product.price);
-  const discountPercent = toNumber(product.discount_percentage);
+  const finalPrice = toNumber(
+    product.price_amount ||
+    product.price ||
+    product.card_final_price
+  );
+
+  const discountPercent = toNumber(
+    product.discount_percentage ||
+    product.card_discount_percent
+  );
 
   return {
     supplier_name: SUPPLIER_NAME,
     supplier_slug: SUPPLIER_SLUG,
 
     supplier_sku: null,
-    supplier_product_code: cleanText(productCode),
+    supplier_product_code: productCode,
 
     brand_raw: cleanText(
       product.brand_name ||
       product.brand ||
       product.manufacturer ||
       product.designer ||
+      product.card_brand ||
       getFeature(product, 'brand')
     ),
 
-    title_raw: cleanText(product.name),
+    title_raw: cleanText(product.name || product.card_title),
     description_raw: cleanText(product.description),
 
     gender_raw: getFeature(product, 'gender'),
@@ -168,12 +211,18 @@ function normalizeProduct(product) {
     is_sale: Boolean(product.has_discount || discountPercent),
 
     supplier_product_url: cleanText(product.link || product.url),
-    listing_url: START_URL,
+    listing_url: LISTING_URL,
 
-    product_key: `${SUPPLIER_SLUG}:${cleanText(productCode)}`,
-    product_hash: makeHash(product),
+    product_key: `${SUPPLIER_SLUG}:${productCode}`,
+    product_hash: makeHash({
+      supplier_slug: SUPPLIER_SLUG,
+      supplier_product_code: productCode,
+      supplier_final_price: finalPrice,
+      is_active: true
+    }),
 
-    images_raw: product.images_raw || extractImages(product),
+    images_raw: extractImages(product),
+
     raw_json: product,
 
     scrape_status: 'new',
@@ -185,6 +234,14 @@ function normalizeProduct(product) {
 
 async function login(page) {
   console.log('Opening Julian login page...');
+
+  if (!process.env.JULIAN_LOGIN_URL) {
+    throw new Error('JULIAN_LOGIN_URL is missing');
+  }
+
+  if (!process.env.JULIAN_EMAIL || !process.env.JULIAN_PASSWORD) {
+    throw new Error('JULIAN_EMAIL or JULIAN_PASSWORD is missing');
+  }
 
   await page.goto(process.env.JULIAN_LOGIN_URL, {
     waitUntil: 'networkidle',
@@ -199,7 +256,7 @@ async function login(page) {
   console.log('Credentials filled');
 
   await page.keyboard.press('Enter');
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('networkidle', { timeout: 120000 }).catch(() => {});
 
   console.log('Login completed');
   console.log('Current URL:', page.url());
@@ -208,7 +265,7 @@ async function login(page) {
 async function openListing(page, pageNumber = 1) {
   console.log('Opening listing page...');
 
-  await page.goto('https://b2bfashion.online/', {
+  await page.goto(START_URL, {
     waitUntil: 'domcontentloaded',
     timeout: 120000
   }).catch(e => {
@@ -217,28 +274,22 @@ async function openListing(page, pageNumber = 1) {
 
   await page.waitForTimeout(8000);
 
-  console.log('Opening ALL CATEGORIES via browser location...');
+  const pageUrl =
+    pageNumber > 1
+      ? `${LISTING_URL}?page=${pageNumber}`
+      : LISTING_URL;
 
-await page.evaluate(() => {
-  window.location.href = '/306-all';
-});
+  console.log('Opening listing URL:', pageUrl);
 
-await page.waitForLoadState('domcontentloaded', { timeout: 120000 }).catch(() => {});
-await page.waitForTimeout(15000);
+  await page.goto(pageUrl, {
+    waitUntil: 'domcontentloaded',
+    timeout: 120000
+  }).catch(e => {
+    console.log('Listing goto warning:', e.message);
+  });
 
-  if (pageNumber > 1) {
-    const pageUrl = `https://b2bfashion.online/306-all?page=${pageNumber}`;
-    console.log('Opening page URL:', pageUrl);
-
-    await page.goto(pageUrl, {
-      waitUntil: 'domcontentloaded',
-      timeout: 120000
-    }).catch(e => {
-      console.log('Pagination goto warning:', e.message);
-    });
-
-    await page.waitForTimeout(10000);
-  }
+  await page.waitForLoadState('domcontentloaded', { timeout: 120000 }).catch(() => {});
+  await page.waitForTimeout(15000);
 
   await page.mouse.wheel(0, 15000);
   await page.waitForTimeout(5000);
@@ -259,43 +310,24 @@ async function clickQuickviews(page) {
 
   await page.waitForTimeout(5000);
 
-  console.log('After listing URL:', page.url());
-  console.log('After listing title:', await page.title());
-
-  console.log(
-    'Product miniature count:',
-    await page.locator('.product-miniature').count()
-  );
-
-  console.log(
-    'Any button-action count:',
-    await page.locator('.button-action').count()
-  );
-
-  const quickButtons = await page.$$(
-    '.button-action.quick-view, a.quick-view, [title="Quick view"]'
-  );
-
-  console.log(
-    'Quick view elements:',
-    await page.locator('.quick-view').count()
-  );
-
-  console.log('Quick buttons found:', quickButtons.length);
-
   const productCount = await page.locator('.product-miniature').count();
   const limit = Math.min(productCount, LIMIT_PRODUCTS);
 
-  const quickviewBrands = [];
+  console.log('Product miniature count:', productCount);
+  console.log('LIMIT_PRODUCTS:', LIMIT_PRODUCTS);
+  console.log('Products to process:', limit);
+
+  const listingCards = [];
   const quickviewImages = [];
 
   for (let i = 0; i < limit; i++) {
+    let card = null;
+    let cardImage = null;
+
     try {
-      const cardText = await page
-        .locator('.product-miniature')
-        .nth(i)
-        .innerText()
-        .catch(() => '');
+      const productCard = page.locator('.product-miniature').nth(i);
+
+      const cardText = await productCard.innerText().catch(() => '');
 
       const cardLines = cardText
         .split('\n')
@@ -303,19 +335,34 @@ async function clickQuickviews(page) {
         .filter(Boolean);
 
       const cardBrand = cardLines[0] || null;
-      quickviewBrands.push(cardBrand);
+      const cardTitle = detectTitleFromLines(cardLines);
+      const cardReference = detectCodeFromLines(cardLines);
 
-      console.log('Listing card brand:', i + 1, cardBrand);
-
-      const cardImage = await page
-        .locator('.product-miniature')
-        .nth(i)
+      cardImage = await productCard
         .locator('img')
         .first()
         .getAttribute('src')
         .catch(() => null);
 
-      console.log('Listing card image:', i + 1, cardImage);
+      card = {
+        card_brand: cardBrand,
+        card_title: cardTitle,
+        card_reference: cardReference,
+        card_image: cardImage,
+        raw_text: cardText,
+        raw_lines: cardLines,
+        listing_index: i + 1
+      };
+
+      listingCards.push(card);
+
+      console.log('Listing card:', {
+        index: i + 1,
+        brand: cardBrand,
+        title: cardTitle,
+        reference: cardReference,
+        image: cardImage
+      });
 
       const button = page.locator('.button-action.quick-view').nth(i * 2);
 
@@ -324,11 +371,11 @@ async function clickQuickviews(page) {
           behavior: 'instant',
           block: 'center'
         });
-      });
+      }).catch(() => {});
 
       await page.waitForTimeout(1500);
 
-      if (await button.isVisible()) {
+      if (await button.count() && await button.isVisible()) {
         await button.click({
           force: true,
           timeout: 10000
@@ -362,6 +409,7 @@ async function clickQuickviews(page) {
         }
 
         quickviewImages.push(cleanModalImages);
+
         console.log('Quickview images:', i + 1, cleanModalImages.length);
 
         const closeBtn = page
@@ -373,18 +421,31 @@ async function clickQuickviews(page) {
           await page.waitForTimeout(1000);
         }
       } else {
-        console.log('Button not visible:', i + 1);
+        console.log('Quickview button not visible:', i + 1);
         quickviewImages.push(cardImage ? [cardImage] : []);
       }
     } catch (error) {
-      console.log('Quickview click skipped:', i + 1, error.message);
-      quickviewBrands.push(null);
-      quickviewImages.push([]);
+      console.log('Quickview step failed:', i + 1, error.message);
+
+      if (!card) {
+        listingCards.push({
+          card_brand: null,
+          card_title: null,
+          card_reference: null,
+          card_image: cardImage,
+          raw_text: null,
+          raw_lines: [],
+          listing_index: i + 1,
+          error: error.message
+        });
+      }
+
+      quickviewImages.push(cardImage ? [cardImage] : []);
     }
   }
 
   return {
-    brands: quickviewBrands,
+    cards: listingCards,
     images: quickviewImages
   };
 }
@@ -401,7 +462,7 @@ async function sendWebhook(products) {
     {
       supplier_name: SUPPLIER_NAME,
       supplier_slug: SUPPLIER_SLUG,
-      source: 'julian_quickview_scraper',
+      source: 'julian_listing_with_quickview_enrichment',
       scraped_at: new Date().toISOString(),
       products
     },
@@ -419,10 +480,15 @@ async function run() {
     headless: true
   });
 
-  const page = await browser.newPage();
+  const page = await browser.newPage({
+    viewport: {
+      width: 1440,
+      height: 1200
+    }
+  });
 
   const quickviewProducts = [];
-  const allQuickviewBrands = [];
+  const allListingCards = [];
   const allQuickviewImages = [];
 
   page.on('response', async response => {
@@ -443,10 +509,9 @@ async function run() {
             json.product.name || 'NO_NAME',
             json.product.reference || 'NO_REF'
           );
-  
         }
       } catch (error) {
-        console.log(' JSON parse failed:', error.message);
+        console.log('JSON parse failed:', error.message);
       }
     }
   });
@@ -468,47 +533,77 @@ async function run() {
 
       const pageData = await clickQuickviews(page);
 
-      allQuickviewBrands.push(...pageData.brands);
+      allListingCards.push(...pageData.cards);
       allQuickviewImages.push(...pageData.images);
-      }
-
-      const products = quickviewProducts.map((product, index) => {
-        const productImages = allQuickviewImages[index] || [];
-
-        const cleanImages = productImages
-          .filter(Boolean)
-          .filter(url =>
-            url.includes('.jpg') ||
-            url.includes('.jpeg') ||
-            url.includes('.png') ||
-            url.includes('.webp')
-          );
-
-        console.log('BRAND DEBUG:', {
-          code: product.reference || product.spu || product.id_product || product.id,
-          brand_name: product.brand_name,
-          brand: product.brand,
-          manufacturer: product.manufacturer,
-          designer: product.designer,
-          listing_brand: allQuickviewBrands[index]
-        });
-        
-        return normalizeProduct({
-          ...product,
-          brand:
-            product.brand_name ||
-            product.brand ||
-            product.manufacturer ||
-            product.designer ||
-            allQuickviewBrands[index] ||
-            null,
-          images_raw: cleanImages.length ? cleanImages : extractImages(product)
-        });
-    });
+    }
 
     console.log('Captured quickview products:', quickviewProducts.length);
-    console.log('Captured listing brands:', allQuickviewBrands.length);
+    console.log('Captured listing cards:', allListingCards.length);
     console.log('Captured image groups:', allQuickviewImages.length);
+
+    const products = allListingCards.map((card, index) => {
+      const quickviewProduct = quickviewProducts[index] || {};
+      const productImages = allQuickviewImages[index] || [];
+
+      const cleanImages = productImages
+        .filter(Boolean)
+        .filter(url =>
+          url.includes('.jpg') ||
+          url.includes('.jpeg') ||
+          url.includes('.png') ||
+          url.includes('.webp')
+        );
+
+      const mergedProduct = {
+        ...card,
+        ...quickviewProduct,
+
+        reference:
+          quickviewProduct.reference ||
+          quickviewProduct.spu ||
+          quickviewProduct.id_product ||
+          quickviewProduct.id ||
+          card.card_reference ||
+          `listing-${card.listing_index}`,
+
+        name:
+          quickviewProduct.name ||
+          card.card_title ||
+          card.card_brand ||
+          `Listing product ${card.listing_index}`,
+
+        brand:
+          quickviewProduct.brand_name ||
+          quickviewProduct.brand ||
+          quickviewProduct.manufacturer ||
+          quickviewProduct.designer ||
+          card.card_brand ||
+          null,
+
+        card_image: card.card_image,
+
+        images_raw: cleanImages.length
+          ? cleanImages
+          : extractImages({
+              ...quickviewProduct,
+              card_image: card.card_image
+            }),
+
+        listing_fallback_used: !quickviewProducts[index]
+      };
+
+      console.log('PRODUCT BUILD DEBUG:', {
+        index: index + 1,
+        fallback: mergedProduct.listing_fallback_used,
+        code: mergedProduct.reference,
+        brand: mergedProduct.brand,
+        title: mergedProduct.name,
+        images_count: mergedProduct.images_raw.length
+      });
+
+      return normalizeProduct(mergedProduct);
+    });
+
     console.log('Prepared products:', products.length);
 
     if (!products.length) {
@@ -526,7 +621,7 @@ async function run() {
       made_in_raw: products[0].made_in_raw,
       size_and_fit_raw: products[0].size_and_fit_raw,
       images_count: products[0].images_raw.length,
-      images_raw: products[0].images_raw
+      fallback: products[0].raw_json?.listing_fallback_used
     });
 
     await sendWebhook(products);
@@ -543,6 +638,5 @@ run().catch(error => {
     console.error('Response data:', error.response.data);
   }
 
-  
   process.exit(1);
 });
