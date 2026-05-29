@@ -296,10 +296,19 @@ async function openListing(page, pageNumber = 1) {
 
   console.log('Opening listing URL:', pageUrl);
 
-  await page.goto(pageUrl, {
-    waitUntil: 'domcontentloaded',
+  await page.goto('https://b2bfashion.online/', {
+    waitUntil: 'networkidle',
     timeout: 120000
   });
+
+  await page.waitForTimeout(5000);
+
+  await page.evaluate(url => {
+    window.location.href = url;
+  }, pageUrl);
+
+  await page.waitForLoadState('domcontentloaded').catch(() => {});
+  await page.waitForTimeout(10000);
 
   await page.waitForTimeout(10000);
   await page.mouse.wheel(0, 15000);
