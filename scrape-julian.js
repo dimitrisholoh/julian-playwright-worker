@@ -543,5 +543,6 @@ run().catch(error => {
     console.error('Response data:', error.response.data);
   }
 
+  
   process.exit(1);
 });
