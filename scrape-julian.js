@@ -402,11 +402,18 @@ async function collectListingCards(page) {
       const moneyMatches = text.match(/€\s?[\d.,]+/g) || [];
       const discountMatch = text.match(/-\s?\d+%/);
 
-      const productCodeLine = lines.find(line =>
-        /^[A-Z0-9]{8,}$/i.test(line) &&
-        !line.includes('€') &&
-        !line.includes('%')
-      );
+      const productCodeLine = lines.find(line => {
+        const normalized = line.trim();
+        const brandLine = lines[0] ? lines[0].trim().toUpperCase() : '';
+
+        return (
+          normalized.toUpperCase() !== brandLine &&
+          /^[A-Z0-9\-]{8,}$/i.test(normalized) &&
+          /\d/.test(normalized) &&
+          !normalized.includes('€') &&
+          !normalized.includes('%')
+        );
+      });
 
       const sizeLine = lines.find(line =>
         /\b\d+\s?(IT|FR|EU)?\b|XS|S|M|L|XL|XXL|U/i.test(line)
