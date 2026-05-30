@@ -557,12 +557,27 @@ async function clickQuickviewOnce(page, card, attempt) {
 }
 
 async function clickQuickviewOnce(page, card, attempt) {
-  console.log('Quickview hybrid attempt:', {
+  console.log('Quickview fresh-page attempt:', {
     index: card.index,
     attempt,
     brand: card.brand,
     product_code: card.product_code
   });
+
+  // Каждый раз открываем свежий листинг.
+  // Это лечит проблему, когда Julian после 10-12 quickview перестает отдавать AJAX.
+  await page.goto(LISTING_URL, {
+    waitUntil: 'domcontentloaded',
+    timeout: 120000
+  });
+
+  await page.waitForTimeout(7000);
+
+  // Скроллим вниз, чтобы карточки точно появились.
+  for (let i = 0; i < 5; i++) {
+    await page.mouse.wheel(0, 4000);
+    await page.waitForTimeout(700);
+  }
 
   await closeModal(page);
 
@@ -587,10 +602,10 @@ async function clickQuickviewOnce(page, card, attempt) {
     const cardLocator = page.locator('.product-miniature').nth(card.card_index);
 
     await cardLocator.scrollIntoViewIfNeeded().catch(() => {});
-    await page.waitForTimeout(700);
+    await page.waitForTimeout(1000);
 
     await cardLocator.hover({ force: true }).catch(() => {});
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(700);
 
     const button = cardLocator
       .locator('[data-link-action="quickview"], .quick-view, .button-action.quick-view')
@@ -611,7 +626,7 @@ async function clickQuickviewOnce(page, card, attempt) {
           url.includes('id_product')
         );
       },
-      { timeout: 8000 }
+      { timeout: 10000 }
     ).catch(() => null);
 
     await button.click({ force: true, timeout: 10000 });
@@ -660,8 +675,6 @@ async function clickQuickviewOnce(page, card, attempt) {
     await closeModal(page);
   }
 }
-
-  
 async function clickQuickviewAndCapture(page, card) {
   let lastError;
 
