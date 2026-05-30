@@ -415,7 +415,7 @@ async function collectListingCards(page) {
   };
 }
 
- sendWebhook(products) {
+ async function sendWebhook(products) {
   if (!process.env.N8N_WEBHOOK_URL) {
     throw new Error('N8N_WEBHOOK_URL is missing');
   }
