@@ -145,6 +145,15 @@ function extractImages(product, quickviewHtml, sourceCard = {}) {
 function extractVariants(product, sourceCard = {}) {
   const variants = [];
 
+  const baseProductCode = cleanText(
+    sourceCard.product_code ||
+    product.reference ||
+    getFeature(product, 'spu') ||
+    sourceCard.sku ||
+    product.id_product ||
+    product.id
+  );
+
   const addVariant = (item = {}) => {
     const size = cleanText(
       item.size ||
@@ -152,7 +161,9 @@ function extractVariants(product, sourceCard = {}) {
       item.name ||
       item.value ||
       item.attribute_name ||
-      item.group_name
+      item.group_name ||
+      sourceCard.size ||
+      'U'
     );
 
     if (!size) return;
@@ -164,28 +175,51 @@ function extractVariants(product, sourceCard = {}) {
       toNumber(item.in_stock) ??
       1;
 
-    const variantCode = cleanText(
-      item.id_product_attribute ||
-      item.supplier_variant_code ||
-      item.id_attribute ||
-      item.id ||
-      item.variant_id ||
-      `${sourceCard.product_code || product.reference || product.id_product}-${size}`
-    );
-
     const sku = cleanText(
       item.sku ||
       item.reference ||
       item.supplier_sku ||
-      `${sourceCard.product_code || product.reference || product.id_product}${size}`
+      `${baseProductCode}${size}`
     );
 
-    if (variants.some(v =>
-      v.supplier_size === size &&
-      v.supplier_variant_code === variantCode
-    )) {
+    const variantCode = cleanText(`${baseProductCode}-${size}`);
+
+    if (variants.some(v => v.supplier_variant_code === variantCode)) {
       return;
     }
+
+    variants.push({
+      supplier_size: size,
+      supplier_sku: sku,
+      supplier_variant_code: variantCode,
+      stock_quantity: stockQty,
+      is_available: stockQty > 0,
+      currency: 'EUR',
+      raw_variant_json: item
+    });
+  };
+
+  if (Array.isArray(sourceCard.variants_from_listing)) {
+    sourceCard.variants_from_listing.forEach(addVariant);
+  }
+
+  const attributes = product.attributes || {};
+
+  for (const group of Object.values(attributes)) {
+    if (!group || typeof group !== 'object') continue;
+    addVariant(group);
+  }
+
+  if (!variants.length) {
+    addVariant({
+      size: sourceCard.size || 'U',
+      sku: sourceCard.sku,
+      stock_quantity: sourceCard.stock_quantity ?? 1
+    });
+  }
+
+  return variants;
+}
 
     variants.push({
       supplier_size: size,
