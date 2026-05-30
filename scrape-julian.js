@@ -439,7 +439,7 @@ async function collectListingCards(page) {
         discount: discountMatch ? discountMatch[0] : null,
         product_code_line: productCodeLine,
         size_line: sizeLine,
-        stock_line: stockLine
+        stock_line: stockLine,
         variant_rows: variantRows,
       };
     });
