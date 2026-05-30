@@ -447,7 +447,7 @@ async function closeModal(page) {
 }
 
 async function clickQuickviewOnce(page, card, attempt) {
-  console.log('Quickview diagnostic attempt:', {
+  console.log('Quickview hybrid attempt:', {
     index: card.index,
     attempt,
     brand: card.brand,
@@ -456,26 +456,19 @@ async function clickQuickviewOnce(page, card, attempt) {
 
   await closeModal(page);
 
-  const capturedRequests = [];
+  let capturedUrl = null;
 
   const onRequest = request => {
     const url = request.url();
 
     if (
-      url.includes('controller=product') ||
-      url.includes('quickview') ||
-      url.includes('id_product') ||
-      url.includes('id_product_attribute')
+      url.includes('controller=product') &&
+      url.includes('action=quickview') &&
+      url.includes('id_product')
     ) {
-      capturedRequests.push({
-        method: request.method(),
-        url
-      });
+      capturedUrl = url;
 
-      console.log('CAPTURED REQUEST:', {
-        method: request.method(),
-        url
-      });
+      console.log('CAPTURED QUICKVIEW URL:', url);
     }
   };
 
@@ -494,12 +487,71 @@ async function clickQuickviewOnce(page, card, attempt) {
       .locator('[data-link-action="quickview"], .quick-view, .button-action.quick-view')
       .first();
 
-    const buttonCount = await button.count();
-
-    if (!buttonCount) {
+    if (!(await button.count())) {
       throw new Error('Quickview button not found');
     }
 
+    const responsePromise = page.waitForResponse(
+      response => {
+        const url = response.url();
+
+        return (
+          url.includes('controller=product') &&
+          url.includes('action=quickview') &&
+          url.includes('id_product')
+        );
+      },
+      { timeout: 8000 }
+    ).catch(() => null);
+
+    await button.click({ force: true, timeout: 10000 });
+
+    let json = null;
+
+    const response = await responsePromise;
+
+    if (response) {
+      console.log('CAPTURED RESPONSE URL:', response.url());
+      json = await response.json();
+    }
+
+    if (!json && capturedUrl) {
+      console.log('Fallback direct request:', capturedUrl);
+
+      const directResponse = await page.request.get(capturedUrl, {
+        timeout: 30000,
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          'Accept': 'application/json, text/javascript, */*; q=0.01'
+        }
+      });
+
+      if (!directResponse.ok()) {
+        throw new Error(`Fallback request failed: ${directResponse.status()}`);
+      }
+
+      json = await directResponse.json();
+    }
+
+    if (!json) {
+      throw new Error('No quickview response and no captured URL');
+    }
+
+    if (!json.product) {
+      throw new Error('No product in quickview response');
+    }
+
+    await closeModal(page);
+
+    return {
+      product: json.product,
+      quickview_html: json.quickview_html || ''
+    };
+  } finally {
+    page.off('request', onRequest);
+    await closeModal(page);
+  }
+}
     const responsePromise = page.waitForResponse(
       response => {
         const url = response.url();
