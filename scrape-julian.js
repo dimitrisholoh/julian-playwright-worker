@@ -386,7 +386,7 @@ async function collectListingCards(page) {
   return cards;
 }
 
- fetchQuickview(page, card) {
+ async function fetchQuickview(page, card) {
   if (!card.quickview_url) {
     throw new Error(`Missing quickview_url for card ${card.index}`);
   }
