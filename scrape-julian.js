@@ -544,11 +544,7 @@ async function clickQuickviewOnce(page, card, attempt) {
     await closeModal(page);
   }
 }
-  return {
-    product: json.product,
-    quickview_html: json.quickview_html || ''
-  };
-}
+  
 async function clickQuickviewAndCapture(page, card) {
   let lastError;
 
