@@ -346,19 +346,27 @@ async function collectListingCards(page) {
 
     const fullHtml = await card.innerHTML().catch(() => '');
 
+    const href =
+      await card.locator('a').first().getAttribute('href').catch(() => null);
+
     const idProductMatch =
-      fullHtml.match(/id_product[="':\s]+(\d+)/i) ||
-      fullHtml.match(/data-id-product[="']+(\d+)/i) ||
-      fullHtml.match(/id_product=(\d+)/i);
+      fullHtml.match(/id_product[="'\s:]+(\d+)/i) ||
+      fullHtml.match(/data-id-product[="'\s:]+(\d+)/i) ||
+      fullHtml.match(/data-product-id[="'\s:]+(\d+)/i) ||
+      fullHtml.match(/id_product=(\d+)/i) ||
+      href?.match(/\/(\d+)-(\d+)-[^\/"']+\.html/i) ||
+      href?.match(/\/(\d+)-[^\/"']+\.html/i);
 
     const idAttributeMatch =
-      fullHtml.match(/id_product_attribute[="':\s]+(\d+)/i) ||
-      fullHtml.match(/data-id-product-attribute[="']+(\d+)/i) ||
-      fullHtml.match(/id_product_attribute=(\d+)/i);
+      fullHtml.match(/id_product_attribute[="'\s:]+(\d+)/i) ||
+      fullHtml.match(/data-id-product-attribute[="'\s:]+(\d+)/i) ||
+      fullHtml.match(/data-product-attribute[="'\s:]+(\d+)/i) ||
+      fullHtml.match(/id_product_attribute=(\d+)/i) ||
+      href?.match(/\/\d+-(\d+)-[^\/"']+\.html/i);
 
     const idProduct = idProductMatch?.[1] || null;
     const idProductAttribute = idAttributeMatch?.[1] || '0';
-
+    
     const quickviewUrl = idProduct
       ? `https://b2bfashion.online/index.php?controller=product?more=55&action=quickview&id_product=${idProduct}&id_product_attribute=${idProductAttribute}`
       : null;
@@ -370,6 +378,7 @@ async function collectListingCards(page) {
       id_product: idProduct,
       id_product_attribute: idProductAttribute,
       quickview_url: quickviewUrl,
+      href,
       raw_text: text,
       raw_lines: lines
     });
