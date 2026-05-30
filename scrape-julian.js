@@ -347,7 +347,7 @@ async function collectListingCards(page) {
     const fullHtml = await card.innerHTML().catch(() => '');
     if (i === 0) {
       console.log('FULL HTML CARD START');
-      console.log(fullHtml);
+      console.log(JSON.stringify(fullHtml));
       console.log('FULL HTML CARD END');
     }
 
