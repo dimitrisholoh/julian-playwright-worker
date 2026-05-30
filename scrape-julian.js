@@ -438,7 +438,7 @@ async function collectListingCards(page) {
   console.log('Webhook sent successfully');
 }
 
- run() {
+ async function run() {
   const browser = await chromium.launch({
     headless: true
   });
