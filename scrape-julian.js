@@ -221,39 +221,6 @@ function extractVariants(product, sourceCard = {}) {
   return variants;
 }
 
-    variants.push({
-      supplier_size: size,
-      supplier_sku: sku,
-      supplier_variant_code: variantCode,
-      stock_quantity: stockQty,
-      is_available: stockQty > 0,
-      currency: 'EUR',
-      raw_variant_json: item
-    });
-  };
-
-  if (Array.isArray(sourceCard.variants_from_listing)) {
-    sourceCard.variants_from_listing.forEach(addVariant);
-  }
-
-  const attributes = product.attributes || {};
-
-  for (const group of Object.values(attributes)) {
-    if (!group || typeof group !== 'object') continue;
-    addVariant(group);
-  }
-
-  if (!variants.length) {
-    addVariant({
-      size: sourceCard.size || 'U',
-      sku: sourceCard.sku,
-      id_product_attribute: sourceCard.id_product_attribute,
-      stock_quantity: sourceCard.stock_quantity ?? 1
-    });
-  }
-
-  return variants;
-}
 function normalizeProduct(product, quickviewHtml, sourceCard = {}) {
   const productCode = cleanText(
     sourceCard.product_code ||
