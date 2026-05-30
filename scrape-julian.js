@@ -98,7 +98,7 @@ function extractImagesFromHtml(html) {
   return urls;
 }
 
-function extractImages(product, quickviewHtml) {
+function extractImages(product, quickviewHtml, sourceCard = {}) {
   const images = [];
 
   const addImage = (url, raw = null) => {
@@ -115,14 +115,10 @@ function extractImages(product, quickviewHtml) {
     });
   };
 
-  extractImagesFromHtml(quickviewHtml).forEach(url => addImage(url, null));
+  if (sourceCard.image_main) addImage(sourceCard.image_main, null);
+  if (sourceCard.image_hover) addImage(sourceCard.image_hover, null);
 
-  if (Array.isArray(product.images_raw)) {
-    product.images_raw.forEach(img => {
-      if (typeof img === 'string') addImage(img, img);
-      else addImage(img?.url, img);
-    });
-  }
+  extractImagesFromHtml(quickviewHtml).forEach(url => addImage(url, null));
 
   if (Array.isArray(product.images)) {
     product.images.forEach(img => {
@@ -147,45 +143,65 @@ function extractImages(product, quickviewHtml) {
   return images;
 }
 
-function extractVariants(product) {
-  const result = [];
+function extractVariants(product, sourceCard = {}) {
+  const variants = [];
+
   const attributes = product.attributes || {};
 
   for (const group of Object.values(attributes)) {
     if (!group || typeof group !== 'object') continue;
 
-    result.push({
-      supplier_size: cleanText(group.name || group.value),
-      supplier_sku: cleanText(group.reference || product.reference_to_display),
-      supplier_variant_code: cleanText(group.id_attribute),
-      stock_quantity: product.quantity ?? product.quantity_all_versions ?? 1,
-      is_available: product.availability === 'available',
+    variants.push({
+      supplier_size: cleanText(group.name || group.value || sourceCard.size),
+      supplier_sku: cleanText(group.reference || product.reference_to_display || sourceCard.sku),
+      supplier_variant_code: cleanText(group.id_attribute || sourceCard.id_product_attribute),
+      stock_quantity: product.quantity ?? product.quantity_all_versions ?? sourceCard.stock_quantity ?? 1,
+      is_available: product.availability === 'available' || Boolean(sourceCard.stock_quantity),
       currency: 'EUR',
       raw_variant_json: group
     });
   }
 
-  return result;
+  if (!variants.length && sourceCard.size) {
+    variants.push({
+      supplier_size: cleanText(sourceCard.size),
+      supplier_sku: cleanText(sourceCard.sku),
+      supplier_variant_code: cleanText(sourceCard.id_product_attribute),
+      stock_quantity: sourceCard.stock_quantity ?? 1,
+      is_available: Boolean(sourceCard.stock_quantity),
+      currency: 'EUR',
+      raw_variant_json: sourceCard
+    });
+  }
+
+  return variants;
 }
 
 function normalizeProduct(product, quickviewHtml, sourceCard = {}) {
   const productCode = cleanText(
     product.reference ||
-    product.spu ||
+    getFeature(product, 'spu') ||
+    sourceCard.sku ||
+    sourceCard.product_code ||
     product.id_product ||
-    product.id ||
-    sourceCard.id_product
+    product.id
   );
 
   const retailPrice = toNumber(
+    sourceCard.retail_price ||
     product.price_without_reduction ||
     product.regular_price ||
-    product.wholesale_price
+    product.regular_price_amount
   );
 
-  const finalPrice = toNumber(product.price_amount || product.price);
+  const finalPrice = toNumber(
+    sourceCard.final_price ||
+    product.price_amount ||
+    product.price
+  );
 
   const discountPercent = toNumber(
+    sourceCard.discount_percent ||
     product.discount_percentage_absolute ||
     product.discount_percentage
   );
@@ -194,16 +210,16 @@ function normalizeProduct(product, quickviewHtml, sourceCard = {}) {
     supplier_name: SUPPLIER_NAME,
     supplier_slug: SUPPLIER_SLUG,
 
-    supplier_sku: cleanText(product.reference_to_display || null),
+    supplier_sku: cleanText(product.reference_to_display || sourceCard.sku),
     supplier_product_code: productCode,
 
     brand_raw: cleanText(
+      sourceCard.brand ||
       product.brand_name ||
       product.brand ||
       product.manufacturer_name ||
       product.manufacturer ||
       product.designer ||
-      sourceCard.brand ||
       getFeature(product, 'brand')
     ),
 
@@ -214,12 +230,13 @@ function normalizeProduct(product, quickviewHtml, sourceCard = {}) {
     category_raw: cleanText(
       getFeature(product, 'category') ||
       product.category_name ||
-      product.category
+      product.category ||
+      sourceCard.category
     ),
     subcategory_raw: null,
     type_raw: getFeature(product, 'type'),
     color_raw: getFeature(product, 'color'),
-    season_raw: getFeature(product, 'season'),
+    season_raw: cleanText(getFeature(product, 'season') || sourceCard.season),
 
     composition_raw: getFeature(product, 'composition'),
 
@@ -229,7 +246,7 @@ function normalizeProduct(product, quickviewHtml, sourceCard = {}) {
       getFeature(product, 'country') ||
       getFeature(product, 'origin'),
 
-    size_and_fit_raw: getFeature(product, 'size and fit'),
+    size_and_fit_raw: cleanText(getFeature(product, 'size and fit') || sourceCard.size),
 
     supplier_retail_price: retailPrice,
     supplier_final_price: finalPrice,
@@ -249,8 +266,8 @@ function normalizeProduct(product, quickviewHtml, sourceCard = {}) {
       is_active: true
     }),
 
-    images_raw: extractImages(product, quickviewHtml),
-    variants_raw: extractVariants(product),
+    images_raw: extractImages(product, quickviewHtml, sourceCard),
+    variants_raw: extractVariants(product, sourceCard),
 
     raw_json: {
       ...product,
@@ -287,7 +304,7 @@ async function login(page) {
 
   await page.keyboard.press('Enter');
 
-  await page.waitForTimeout(8000);
+  await page.waitForTimeout(12000);
 
   console.log('Login completed');
   console.log('Current URL:', page.url());
@@ -296,23 +313,19 @@ async function login(page) {
 async function openListing(page, pageNumber = 1) {
   const pageUrl =
     pageNumber > 1
-      ? `/306-all?page=${pageNumber}`
-      : `/306-all`;
+      ? `${LISTING_URL}?page=${pageNumber}`
+      : LISTING_URL;
 
-  console.log('Opening listing URL:', `https://b2bfashion.online${pageUrl}`);
+  console.log('Opening listing URL:', pageUrl);
 
-  await page.evaluate(url => {
-    window.location.href = url;
-  }, pageUrl).catch(e => {
-    console.log('Location change warning:', e.message);
+  await page.goto(pageUrl, {
+    waitUntil: 'domcontentloaded',
+    timeout: 120000
+  }).catch(e => {
+    console.log('Listing goto warning:', e.message);
   });
 
   await page.waitForTimeout(15000);
-
-  await page.waitForLoadState('domcontentloaded', { timeout: 120000 }).catch(e => {
-    console.log('Listing loadstate warning:', e.message);
-  });
-
   await page.mouse.wheel(0, 15000);
   await page.waitForTimeout(5000);
 
@@ -320,7 +333,6 @@ async function openListing(page, pageNumber = 1) {
   console.log('Current listing URL:', page.url());
 
   const productCount = await page.locator('.product-miniature').count();
-
   console.log('Products found on page:', productCount);
 
   return productCount;
@@ -338,84 +350,132 @@ async function collectListingCards(page) {
   for (let i = 0; i < limit; i++) {
     const card = productCards.nth(i);
 
-    const text = await card.innerText().catch(() => '');
-    const lines = text
-      .split('\n')
-      .map(line => cleanText(line))
-      .filter(Boolean);
+    const data = await card.evaluate(el => {
+      const text = el.innerText || '';
+      const lines = text
+        .split('\n')
+        .map(x => x.replace(/\s+/g, ' ').trim())
+        .filter(Boolean);
 
-    const fullHtml = await card.innerHTML().catch(() => '');
-    
-    const href =
-      await card.locator('a').first().getAttribute('href').catch(() => null);
+      const html = el.innerHTML || '';
 
-    const idProductMatch =
-      fullHtml.match(/id_product[="'\s:]+(\d+)/i) ||
-      fullHtml.match(/data-id-product[="'\s:]+(\d+)/i) ||
-      fullHtml.match(/data-product-id[="'\s:]+(\d+)/i) ||
-      fullHtml.match(/id_product=(\d+)/i) ||
-      href?.match(/\/(\d+)-(\d+)-[^\/"']+\.html/i) ||
-      href?.match(/\/(\d+)-[^\/"']+\.html/i);
+      const imgTags = Array.from(el.querySelectorAll('img'));
+      const imageUrls = imgTags
+        .map(img =>
+          img.getAttribute('src') ||
+          img.getAttribute('data-src') ||
+          img.getAttribute('data-full-size-image-url')
+        )
+        .filter(Boolean);
 
-    const idAttributeMatch =
-      fullHtml.match(/id_product_attribute[="'\s:]+(\d+)/i) ||
-      fullHtml.match(/data-id-product-attribute[="'\s:]+(\d+)/i) ||
-      fullHtml.match(/data-product-attribute[="'\s:]+(\d+)/i) ||
-      fullHtml.match(/id_product_attribute=(\d+)/i) ||
-      href?.match(/\/\d+-(\d+)-[^\/"']+\.html/i);
+      const quickBtn = el.querySelector(
+        '[data-link-action="quickview"], .quick-view, .button-action.quick-view'
+      );
 
-    const idProduct = idProductMatch?.[1] || null;
-    const idProductAttribute = idAttributeMatch?.[1] || '0';
-    
-    const quickviewUrl = idProduct
-      ? `https://b2bfashion.online/index.php?controller=product?more=55&action=quickview&id_product=${idProduct}&id_product_attribute=${idProductAttribute}`
-      : null;
+      const sizeRow = lines.find(line => /\b\d+\s?(IT|FR|EU)?\b|XS|S|M|L|XL|XXL|U/i.test(line)) || null;
+      const stockLine = lines.find(line => /pc\.|pcs|in stock/i.test(line)) || null;
+
+      const retailLine = lines.find(line => /RETAIL PRICE/i.test(line)) || null;
+      const finalLine = lines.find(line => /FINAL PRICE/i.test(line)) || null;
+
+      const moneyMatches = text.match(/€\s?[\d.,]+/g) || [];
+      const discountMatch = text.match(/-\s?\d+%/);
+
+      const productCodeLine = lines.find(line =>
+        /^[A-Z0-9]{8,}$/i.test(line) &&
+        !line.includes('€') &&
+        !line.includes('%')
+      );
+
+      return {
+        lines,
+        html,
+        image_urls: imageUrls,
+        quickview_outer_html: quickBtn ? quickBtn.outerHTML : null,
+        retail_line: retailLine,
+        final_line: finalLine,
+        money_matches: moneyMatches,
+        discount: discountMatch ? discountMatch[0] : null,
+        product_code_line: productCodeLine,
+        size_line: sizeRow,
+        stock_line: stockLine
+      };
+    });
+
+    const brand = data.lines[0] || null;
+    const season = data.lines.find(line => /Spring|Summer|Fall|Winter|Autumn|FW|SS/i.test(line)) || null;
+    const productCode = data.product_code_line || null;
+
+    const retailPrice = data.money_matches[0] || null;
+    const finalPrice = data.money_matches[data.money_matches.length - 1] || null;
+
+    const imageMain = data.image_urls[0] || null;
+    const imageHover = data.image_urls[1] || null;
 
     cards.push({
       index: i + 1,
-      brand: lines[0] || null,
-      title: lines[1] || lines[0] || null,
-      id_product: idProduct,
-      id_product_attribute: idProductAttribute,
-      quickview_url: quickviewUrl,
-      href,
-      raw_text: text,
-      raw_lines: lines
+      brand,
+      title: null,
+      season,
+      product_code: productCode,
+      sku: productCode,
+      retail_price: retailPrice,
+      final_price: finalPrice,
+      discount_percent: data.discount,
+      size: data.size_line,
+      stock_quantity: data.stock_line ? 1 : null,
+      image_main: imageMain,
+      image_hover: imageHover,
+      quickview_outer_html: data.quickview_outer_html,
+      raw_lines: data.lines,
+      raw_html: data.html
     });
 
     console.log('CARD:', {
       index: i + 1,
-      brand: lines[0] || null,
-      id_product: idProduct,
-      id_product_attribute: idProductAttribute,
-      has_quickview_url: Boolean(quickviewUrl)
+      brand,
+      product_code: productCode,
+      retail_price: retailPrice,
+      final_price: finalPrice,
+      discount: data.discount,
+      image: imageMain ? 'yes' : 'no',
+      quickview_button: data.quickview_outer_html ? 'yes' : 'no'
     });
   }
 
   return cards;
 }
 
- async function fetchQuickview(page, card) {
-  if (!card.quickview_url) {
-    throw new Error(`Missing quickview_url for card ${card.index}`);
-  }
+async function clickQuickviewAndCapture(page, index) {
+  const responsePromise = page.waitForResponse(
+    response =>
+      response.url().includes('controller=product') &&
+      response.url().includes('action=quickview'),
+    { timeout: 30000 }
+  );
 
-  const response = await page.request.get(card.quickview_url, {
-    timeout: 120000,
-    headers: {
-      Accept: 'application/json, text/javascript, */*; q=0.01',
-      'X-Requested-With': 'XMLHttpRequest'
-    }
-  });
+  const button = page
+    .locator('.product-miniature')
+    .nth(index)
+    .locator('[data-link-action="quickview"], .quick-view, .button-action.quick-view')
+    .first();
 
-  if (!response.ok()) {
-    throw new Error(`Quickview failed ${response.status()} for card ${card.index}`);
-  }
+  await button.scrollIntoViewIfNeeded().catch(() => {});
+  await page.waitForTimeout(500);
 
+  await button.click({ force: true, timeout: 10000 });
+
+  const response = await responsePromise;
   const json = await response.json();
 
+  const closeBtn = page.locator('.quickview .close, .modal .close, button.close').first();
+  if (await closeBtn.count()) {
+    await closeBtn.click({ force: true }).catch(() => {});
+    await page.waitForTimeout(500);
+  }
+
   if (!json.product) {
-    throw new Error(`No product in quickview response for card ${card.index}`);
+    throw new Error(`No product in quickview response`);
   }
 
   return {
@@ -424,7 +484,7 @@ async function collectListingCards(page) {
   };
 }
 
- async function sendWebhook(products) {
+async function sendWebhook(products) {
   if (!process.env.N8N_WEBHOOK_URL) {
     throw new Error('N8N_WEBHOOK_URL is missing');
   }
@@ -436,7 +496,7 @@ async function collectListingCards(page) {
     {
       supplier_name: SUPPLIER_NAME,
       supplier_slug: SUPPLIER_SLUG,
-      source: 'julian_quickview_api_scraper',
+      source: 'julian_click_quickview_listing_merge',
       scraped_at: new Date().toISOString(),
       products
     },
@@ -447,7 +507,7 @@ async function collectListingCards(page) {
   console.log('Webhook sent successfully');
 }
 
- async function run() {
+async function run() {
   const browser = await chromium.launch({
     headless: true
   });
@@ -479,9 +539,11 @@ async function collectListingCards(page) {
 
       const cards = await collectListingCards(page);
 
-      for (const card of cards) {
+      for (let i = 0; i < cards.length; i++) {
+        const card = cards[i];
+
         try {
-          const { product, quickview_html } = await fetchQuickview(page, card);
+          const { product, quickview_html } = await clickQuickviewAndCapture(page, i);
 
           const normalized = normalizeProduct(product, quickview_html, card);
           products.push(normalized);
@@ -491,14 +553,17 @@ async function collectListingCards(page) {
             code: normalized.supplier_product_code,
             brand: normalized.brand_raw,
             title: normalized.title_raw,
+            retail: normalized.supplier_retail_price,
+            final: normalized.supplier_final_price,
             images: normalized.images_raw.length,
             variants: normalized.variants_raw.length
           });
 
-          await page.waitForTimeout(300);
+          await page.waitForTimeout(700);
         } catch (error) {
           console.log('PRODUCT FAILED:', {
             index: card.index,
+            brand: card.brand,
             error: error.message
           });
 
