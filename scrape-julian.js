@@ -447,60 +447,103 @@ async function closeModal(page) {
 }
 
 async function clickQuickviewOnce(page, card, attempt) {
-  console.log('Quickview request attempt:', {
+  console.log('Quickview diagnostic attempt:', {
     index: card.index,
     attempt,
-    brand: card.brand
+    brand: card.brand,
+    product_code: card.product_code
   });
 
-  const cardLocator = page.locator('.product-miniature').nth(card.card_index);
+  await closeModal(page);
 
-  const quickviewUrl = await cardLocator.evaluate(el => {
-    const btn = el.querySelector(
-      '[data-link-action="quickview"], .quick-view, .button-action.quick-view'
-    );
+  const capturedRequests = [];
 
-    if (!btn) return null;
+  const onRequest = request => {
+    const url = request.url();
 
-    return (
-      btn.getAttribute('href') ||
-      btn.getAttribute('data-url') ||
-      btn.getAttribute('data-link') ||
-      btn.getAttribute('data-action') ||
-      btn.dataset?.url ||
-      btn.dataset?.link ||
-      null
-    );
-  });
+    if (
+      url.includes('controller=product') ||
+      url.includes('quickview') ||
+      url.includes('id_product') ||
+      url.includes('id_product_attribute')
+    ) {
+      capturedRequests.push({
+        method: request.method(),
+        url
+      });
 
-  if (!quickviewUrl) {
-    throw new Error('Quickview URL not found in button attributes');
-  }
-
-  const fullUrl = quickviewUrl.startsWith('http')
-    ? quickviewUrl
-    : new URL(quickviewUrl, 'https://b2bfashion.online/').toString();
-
-  console.log('Quickview URL:', fullUrl);
-
-  const response = await page.request.get(fullUrl, {
-    timeout: 30000,
-    headers: {
-      'X-Requested-With': 'XMLHttpRequest',
-      'Accept': 'application/json, text/javascript, */*; q=0.01'
+      console.log('CAPTURED REQUEST:', {
+        method: request.method(),
+        url
+      });
     }
-  });
+  };
 
-  if (!response.ok()) {
-    throw new Error(`Quickview request failed: ${response.status()}`);
+  page.on('request', onRequest);
+
+  try {
+    const cardLocator = page.locator('.product-miniature').nth(card.card_index);
+
+    await cardLocator.scrollIntoViewIfNeeded().catch(() => {});
+    await page.waitForTimeout(700);
+
+    await cardLocator.hover({ force: true }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    const button = cardLocator
+      .locator('[data-link-action="quickview"], .quick-view, .button-action.quick-view')
+      .first();
+
+    const buttonCount = await button.count();
+
+    if (!buttonCount) {
+      throw new Error('Quickview button not found');
+    }
+
+    const responsePromise = page.waitForResponse(
+      response => {
+        const url = response.url();
+
+        return (
+          response.status() === 200 &&
+          (
+            url.includes('controller=product') ||
+            url.includes('quickview') ||
+            url.includes('id_product') ||
+            url.includes('id_product_attribute')
+          )
+        );
+      },
+      { timeout: 15000 }
+    );
+
+    await button.click({ force: true, timeout: 10000 });
+
+    const response = await responsePromise;
+    const url = response.url();
+
+    console.log('CAPTURED RESPONSE URL:', url);
+
+    const json = await response.json();
+
+    if (!json.product) {
+      throw new Error('No product in quickview response');
+    }
+
+    await closeModal(page);
+
+    return {
+      product: json.product,
+      quickview_html: json.quickview_html || ''
+    };
+  } catch (error) {
+    console.log('Captured requests before fail:', capturedRequests);
+    throw error;
+  } finally {
+    page.off('request', onRequest);
+    await closeModal(page);
   }
-
-  const json = await response.json();
-
-  if (!json.product) {
-    throw new Error('No product in quickview response');
-  }
-
+}
   return {
     product: json.product,
     quickview_html: json.quickview_html || ''
