@@ -8,8 +8,7 @@ const SUPPLIER_SLUG = 'julian-fashion';
 const LIMIT_PRODUCTS = Number(process.env.LIMIT_PRODUCTS || 48);
 const MAX_PAGES = Number(process.env.MAX_PAGES || 1);
 
-const START_URL = process.env.JULIAN_START_URL || 'https://b2bfashion.online/';
-const LISTING_URL = 'https://b2bfashion.online/306-all';
+const LISTING_URL = process.env.JULIAN_LISTING_URL || 'https://b2bfashion.online/306-all';
 
 function cleanText(value) {
   if (value === null || value === undefined) return null;
@@ -20,22 +19,26 @@ function cleanText(value) {
 function toNumber(value) {
   if (value === null || value === undefined) return null;
 
-  const cleaned = String(value)
+  let s = String(value)
+    .replace(/\s/g, '')
     .replace('€', '')
     .replace('%', '')
-    .replace(',', '.')
-    .replace(/[^\d.-]/g, '')
-    .trim();
+    .replace(/[^\d,.-]/g, '');
 
-  const number = Number(cleaned);
+  if (!s) return null;
+
+  if (s.includes(',') && s.includes('.')) {
+    s = s.replace(/,/g, '');
+  } else if (s.includes(',') && !s.includes('.')) {
+    s = s.replace(',', '.');
+  }
+
+  const number = Number(s);
   return Number.isFinite(number) ? number : null;
 }
 
 function makeHash(value) {
-  return crypto
-    .createHash('sha256')
-    .update(JSON.stringify(value))
-    .digest('hex');
+  return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
 function getFeature(product, name) {
@@ -49,11 +52,7 @@ function getFeature(product, name) {
 
   if (direct) return cleanText(direct);
 
-  const features =
-    product.grouped_features ||
-    product.features ||
-    product.attributes ||
-    {};
+  const features = product.grouped_features || product.features || product.attributes || {};
 
   if (Array.isArray(features)) {
     for (const item of features) {
@@ -115,10 +114,10 @@ function extractImages(product, quickviewHtml, sourceCard = {}) {
     });
   };
 
-  if (sourceCard.image_main) addImage(sourceCard.image_main, null);
-  if (sourceCard.image_hover) addImage(sourceCard.image_hover, null);
+  addImage(sourceCard.image_main);
+  addImage(sourceCard.image_hover);
 
-  extractImagesFromHtml(quickviewHtml).forEach(url => addImage(url, null));
+  extractImagesFromHtml(quickviewHtml).forEach(url => addImage(url));
 
   if (Array.isArray(product.images)) {
     product.images.forEach(img => {
@@ -145,7 +144,6 @@ function extractImages(product, quickviewHtml, sourceCard = {}) {
 
 function extractVariants(product, sourceCard = {}) {
   const variants = [];
-
   const attributes = product.attributes || {};
 
   for (const group of Object.values(attributes)) {
@@ -162,13 +160,13 @@ function extractVariants(product, sourceCard = {}) {
     });
   }
 
-  if (!variants.length && sourceCard.size) {
+  if (!variants.length) {
     variants.push({
       supplier_size: cleanText(sourceCard.size),
       supplier_sku: cleanText(sourceCard.sku),
       supplier_variant_code: cleanText(sourceCard.id_product_attribute),
       stock_quantity: sourceCard.stock_quantity ?? 1,
-      is_available: Boolean(sourceCard.stock_quantity),
+      is_available: Boolean(sourceCard.stock_quantity ?? 1),
       currency: 'EUR',
       raw_variant_json: sourceCard
     });
@@ -179,38 +177,35 @@ function extractVariants(product, sourceCard = {}) {
 
 function normalizeProduct(product, quickviewHtml, sourceCard = {}) {
   const productCode = cleanText(
+    sourceCard.product_code ||
     product.reference ||
     getFeature(product, 'spu') ||
     sourceCard.sku ||
-    sourceCard.product_code ||
     product.id_product ||
     product.id
   );
 
-  const retailPrice = toNumber(
-    sourceCard.retail_price ||
-    product.price_without_reduction ||
-    product.regular_price ||
-    product.regular_price_amount
-  );
+  const retailPrice =
+    toNumber(sourceCard.retail_price) ??
+    toNumber(product.price_without_reduction) ??
+    toNumber(product.regular_price) ??
+    toNumber(product.regular_price_amount);
 
-  const finalPrice = toNumber(
-    sourceCard.final_price ||
-    product.price_amount ||
-    product.price
-  );
+  const finalPrice =
+    toNumber(sourceCard.final_price) ??
+    toNumber(product.price_amount) ??
+    toNumber(product.price);
 
-  const discountPercent = toNumber(
-    sourceCard.discount_percent ||
-    product.discount_percentage_absolute ||
-    product.discount_percentage
-  );
+  const discountPercent =
+    toNumber(sourceCard.discount_percent) ??
+    toNumber(product.discount_percentage_absolute) ??
+    toNumber(product.discount_percentage);
 
   return {
     supplier_name: SUPPLIER_NAME,
     supplier_slug: SUPPLIER_SLUG,
 
-    supplier_sku: cleanText(product.reference_to_display || sourceCard.sku),
+    supplier_sku: cleanText(product.reference_to_display || sourceCard.sku || productCode),
     supplier_product_code: productCode,
 
     brand_raw: cleanText(
@@ -227,19 +222,13 @@ function normalizeProduct(product, quickviewHtml, sourceCard = {}) {
     description_raw: cleanText(product.description),
 
     gender_raw: getFeature(product, 'gender'),
-    category_raw: cleanText(
-      getFeature(product, 'category') ||
-      product.category_name ||
-      product.category ||
-      sourceCard.category
-    ),
+    category_raw: cleanText(getFeature(product, 'category') || product.category_name || product.category),
     subcategory_raw: null,
     type_raw: getFeature(product, 'type'),
     color_raw: getFeature(product, 'color'),
     season_raw: cleanText(getFeature(product, 'season') || sourceCard.season),
 
     composition_raw: getFeature(product, 'composition'),
-
     made_in_raw:
       getFeature(product, 'made in') ||
       getFeature(product, 'made_in') ||
@@ -293,15 +282,12 @@ async function login(page) {
   await page.goto(process.env.JULIAN_LOGIN_URL, {
     waitUntil: 'domcontentloaded',
     timeout: 120000
-  }).catch(e => {
-    console.log('Login goto warning:', e.message);
   });
 
   await page.waitForTimeout(3000);
 
   await page.fill('input[type="email"]', process.env.JULIAN_EMAIL);
   await page.fill('input[type="password"]', process.env.JULIAN_PASSWORD);
-
   await page.keyboard.press('Enter');
 
   await page.waitForTimeout(12000);
@@ -311,23 +297,21 @@ async function login(page) {
 }
 
 async function openListing(page, pageNumber = 1) {
-  const pageUrl =
-    pageNumber > 1
-      ? `${LISTING_URL}?page=${pageNumber}`
-      : LISTING_URL;
+  const pageUrl = pageNumber > 1 ? `${LISTING_URL}?page=${pageNumber}` : LISTING_URL;
 
   console.log('Opening listing URL:', pageUrl);
 
   await page.goto(pageUrl, {
     waitUntil: 'domcontentloaded',
     timeout: 120000
-  }).catch(e => {
-    console.log('Listing goto warning:', e.message);
   });
 
   await page.waitForTimeout(15000);
-  await page.mouse.wheel(0, 15000);
-  await page.waitForTimeout(5000);
+
+  for (let i = 0; i < 5; i++) {
+    await page.mouse.wheel(0, 4000);
+    await page.waitForTimeout(1000);
+  }
 
   console.log('Listing opened');
   console.log('Current listing URL:', page.url());
@@ -340,7 +324,6 @@ async function openListing(page, pageNumber = 1) {
 
 async function collectListingCards(page) {
   const cards = [];
-
   const productCards = page.locator('.product-miniature');
   const count = await productCards.count();
   const limit = Math.min(count, LIMIT_PRODUCTS);
@@ -359,8 +342,7 @@ async function collectListingCards(page) {
 
       const html = el.innerHTML || '';
 
-      const imgTags = Array.from(el.querySelectorAll('img'));
-      const imageUrls = imgTags
+      const imageUrls = Array.from(el.querySelectorAll('img'))
         .map(img =>
           img.getAttribute('src') ||
           img.getAttribute('data-src') ||
@@ -372,12 +354,6 @@ async function collectListingCards(page) {
         '[data-link-action="quickview"], .quick-view, .button-action.quick-view'
       );
 
-      const sizeRow = lines.find(line => /\b\d+\s?(IT|FR|EU)?\b|XS|S|M|L|XL|XXL|U/i.test(line)) || null;
-      const stockLine = lines.find(line => /pc\.|pcs|in stock/i.test(line)) || null;
-
-      const retailLine = lines.find(line => /RETAIL PRICE/i.test(line)) || null;
-      const finalLine = lines.find(line => /FINAL PRICE/i.test(line)) || null;
-
       const moneyMatches = text.match(/€\s?[\d.,]+/g) || [];
       const discountMatch = text.match(/-\s?\d+%/);
 
@@ -387,17 +363,21 @@ async function collectListingCards(page) {
         !line.includes('%')
       );
 
+      const sizeLine = lines.find(line =>
+        /\b\d+\s?(IT|FR|EU)?\b|XS|S|M|L|XL|XXL|U/i.test(line)
+      ) || null;
+
+      const stockLine = lines.find(line => /pc\.|pcs|in stock/i.test(line)) || null;
+
       return {
         lines,
         html,
         image_urls: imageUrls,
         quickview_outer_html: quickBtn ? quickBtn.outerHTML : null,
-        retail_line: retailLine,
-        final_line: finalLine,
         money_matches: moneyMatches,
         discount: discountMatch ? discountMatch[0] : null,
         product_code_line: productCodeLine,
-        size_line: sizeRow,
+        size_line: sizeLine,
         stock_line: stockLine
       };
     });
@@ -409,11 +389,9 @@ async function collectListingCards(page) {
     const retailPrice = data.money_matches[0] || null;
     const finalPrice = data.money_matches[data.money_matches.length - 1] || null;
 
-    const imageMain = data.image_urls[0] || null;
-    const imageHover = data.image_urls[1] || null;
-
     cards.push({
       index: i + 1,
+      card_index: i,
       brand,
       title: null,
       season,
@@ -424,8 +402,8 @@ async function collectListingCards(page) {
       discount_percent: data.discount,
       size: data.size_line,
       stock_quantity: data.stock_line ? 1 : null,
-      image_main: imageMain,
-      image_hover: imageHover,
+      image_main: data.image_urls[0] || null,
+      image_hover: data.image_urls[1] || null,
       quickview_outer_html: data.quickview_outer_html,
       raw_lines: data.lines,
       raw_html: data.html
@@ -438,7 +416,7 @@ async function collectListingCards(page) {
       retail_price: retailPrice,
       final_price: finalPrice,
       discount: data.discount,
-      image: imageMain ? 'yes' : 'no',
+      image: data.image_urls[0] ? 'yes' : 'no',
       quickview_button: data.quickview_outer_html ? 'yes' : 'no'
     });
   }
@@ -446,42 +424,104 @@ async function collectListingCards(page) {
   return cards;
 }
 
-async function clickQuickviewAndCapture(page, index) {
-  const responsePromise = page.waitForResponse(
-    response =>
-      response.url().includes('controller=product') &&
-      response.url().includes('action=quickview'),
-    { timeout: 30000 }
-  );
+async function closeModal(page) {
+  const selectors = [
+    '.quickview .close',
+    '.modal .close',
+    'button.close',
+    '[data-dismiss="modal"]',
+    '.modal button[aria-label="Close"]'
+  ];
 
-  const button = page
-    .locator('.product-miniature')
-    .nth(index)
+  for (const selector of selectors) {
+    const btn = page.locator(selector).first();
+    if (await btn.count()) {
+      await btn.click({ force: true, timeout: 3000 }).catch(() => {});
+      await page.waitForTimeout(700);
+      return;
+    }
+  }
+
+  await page.keyboard.press('Escape').catch(() => {});
+  await page.waitForTimeout(700);
+}
+
+async function clickQuickviewOnce(page, card, attempt) {
+  console.log('Quickview attempt:', {
+    index: card.index,
+    attempt,
+    brand: card.brand
+  });
+
+  await closeModal(page);
+
+  const cardLocator = page.locator('.product-miniature').nth(card.card_index);
+  await cardLocator.scrollIntoViewIfNeeded().catch(() => {});
+  await page.waitForTimeout(700);
+
+  await cardLocator.hover({ force: true }).catch(() => {});
+  await page.waitForTimeout(500);
+
+  const button = cardLocator
     .locator('[data-link-action="quickview"], .quick-view, .button-action.quick-view')
     .first();
 
-  await button.scrollIntoViewIfNeeded().catch(() => {});
-  await page.waitForTimeout(500);
+  const buttonCount = await button.count();
+
+  if (!buttonCount) {
+    throw new Error('Quickview button not found');
+  }
+
+  const responsePromise = page.waitForResponse(
+    response => {
+      const url = response.url();
+      return (
+        response.status() === 200 &&
+        url.includes('controller=product') &&
+        url.includes('quickview')
+      );
+    },
+    { timeout: 15000 }
+  );
 
   await button.click({ force: true, timeout: 10000 });
 
   const response = await responsePromise;
   const json = await response.json();
 
-  const closeBtn = page.locator('.quickview .close, .modal .close, button.close').first();
-  if (await closeBtn.count()) {
-    await closeBtn.click({ force: true }).catch(() => {});
-    await page.waitForTimeout(500);
+  if (!json.product) {
+    throw new Error('No product in quickview response');
   }
 
-  if (!json.product) {
-    throw new Error(`No product in quickview response`);
-  }
+  await closeModal(page);
 
   return {
     product: json.product,
     quickview_html: json.quickview_html || ''
   };
+}
+
+async function clickQuickviewAndCapture(page, card) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      return await clickQuickviewOnce(page, card, attempt);
+    } catch (error) {
+      lastError = error;
+
+      console.log('Quickview attempt failed:', {
+        index: card.index,
+        attempt,
+        error: error.message
+      });
+
+      await closeModal(page);
+      await page.waitForTimeout(1500);
+    }
+  }
+
+  throw lastError;
 }
 
 async function sendWebhook(products) {
@@ -496,7 +536,7 @@ async function sendWebhook(products) {
     {
       supplier_name: SUPPLIER_NAME,
       supplier_slug: SUPPLIER_SLUG,
-      source: 'julian_click_quickview_listing_merge',
+      source: 'julian_click_quickview_listing_merge_v2_retry',
       scraped_at: new Date().toISOString(),
       products
     },
@@ -519,6 +559,8 @@ async function run() {
     }
   });
 
+  page.setDefaultTimeout(30000);
+
   const products = [];
   const errors = [];
 
@@ -539,11 +581,9 @@ async function run() {
 
       const cards = await collectListingCards(page);
 
-      for (let i = 0; i < cards.length; i++) {
-        const card = cards[i];
-
+      for (const card of cards) {
         try {
-          const { product, quickview_html } = await clickQuickviewAndCapture(page, i);
+          const { product, quickview_html } = await clickQuickviewAndCapture(page, card);
 
           const normalized = normalizeProduct(product, quickview_html, card);
           products.push(normalized);
@@ -559,11 +599,12 @@ async function run() {
             variants: normalized.variants_raw.length
           });
 
-          await page.waitForTimeout(700);
+          await page.waitForTimeout(1000);
         } catch (error) {
           console.log('PRODUCT FAILED:', {
             index: card.index,
             brand: card.brand,
+            product_code: card.product_code,
             error: error.message
           });
 
@@ -571,6 +612,9 @@ async function run() {
             card,
             error: error.message
           });
+
+          await closeModal(page);
+          await page.waitForTimeout(1000);
         }
       }
     }
