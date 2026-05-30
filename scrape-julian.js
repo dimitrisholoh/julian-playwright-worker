@@ -346,11 +346,12 @@ async function collectListingCards(page) {
 
     const fullHtml = await card.innerHTML().catch(() => '');
     if (i === 0) {
-      const quickViewButton = await card
-        .locator('[data-link-action="quickview"]')
-        .first()
-        .evaluate(el => el.outerHTML)
-        .catch(() => null);
+      console.log('====================');
+      console.log('FULL CARD HTML');
+      console.log('====================');
+      console.log(fullHtml);
+      console.log('====================');
+    }  
 
   console.log('QUICKVIEW OUTERHTML');
   console.log(quickViewButton || 'NOT FOUND');
