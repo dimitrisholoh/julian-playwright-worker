@@ -503,6 +503,12 @@ async function clickQuickviewOnce(page, card, attempt) {
       { timeout: 8000 }
     ).catch(() => null);
 
+    console.log(
+      'BUTTON HTML:',
+      await button.evaluate(el => el.outerHTML)
+    );
+    
+    
     await button.click({ force: true, timeout: 10000 });
 
     let json = null;
