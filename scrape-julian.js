@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const SUPPLIER_NAME = 'Julian Fashion Srl';
 const SUPPLIER_SLUG = 'julian-fashion';
 
-const LIMIT_PRODUCTS = Number(process.env.LIMIT_PRODUCTS || 48);
+const LIMIT_PRODUCTS = Number(process.env.LIMIT_PRODUCTS || 20);
 const MAX_PAGES = Number(process.env.MAX_PAGES || 1);
 
 const LISTING_URL = process.env.JULIAN_LISTING_URL || 'https://b2bfashion.online/306-all';
@@ -144,37 +144,82 @@ function extractImages(product, quickviewHtml, sourceCard = {}) {
 
 function extractVariants(product, sourceCard = {}) {
   const variants = [];
+
+  const addVariant = (item = {}) => {
+    const size = cleanText(
+      item.size ||
+      item.supplier_size ||
+      item.name ||
+      item.value ||
+      item.attribute_name ||
+      item.group_name
+    );
+
+    if (!size) return;
+
+    const stockQty =
+      toNumber(item.stock_quantity) ??
+      toNumber(item.quantity) ??
+      toNumber(item.stock) ??
+      toNumber(item.in_stock) ??
+      1;
+
+    const variantCode = cleanText(
+      item.id_product_attribute ||
+      item.supplier_variant_code ||
+      item.id_attribute ||
+      item.id ||
+      item.variant_id ||
+      `${sourceCard.product_code || product.reference || product.id_product}-${size}`
+    );
+
+    const sku = cleanText(
+      item.sku ||
+      item.reference ||
+      item.supplier_sku ||
+      `${sourceCard.product_code || product.reference || product.id_product}${size}`
+    );
+
+    if (variants.some(v =>
+      v.supplier_size === size &&
+      v.supplier_variant_code === variantCode
+    )) {
+      return;
+    }
+
+    variants.push({
+      supplier_size: size,
+      supplier_sku: sku,
+      supplier_variant_code: variantCode,
+      stock_quantity: stockQty,
+      is_available: stockQty > 0,
+      currency: 'EUR',
+      raw_variant_json: item
+    });
+  };
+
+  if (Array.isArray(sourceCard.variants_from_listing)) {
+    sourceCard.variants_from_listing.forEach(addVariant);
+  }
+
   const attributes = product.attributes || {};
 
   for (const group of Object.values(attributes)) {
     if (!group || typeof group !== 'object') continue;
-
-    variants.push({
-      supplier_size: cleanText(group.name || group.value || sourceCard.size),
-      supplier_sku: cleanText(group.reference || product.reference_to_display || sourceCard.sku),
-      supplier_variant_code: cleanText(group.id_attribute || sourceCard.id_product_attribute),
-      stock_quantity: product.quantity ?? product.quantity_all_versions ?? sourceCard.stock_quantity ?? 1,
-      is_available: product.availability === 'available' || Boolean(sourceCard.stock_quantity),
-      currency: 'EUR',
-      raw_variant_json: group
-    });
+    addVariant(group);
   }
 
   if (!variants.length) {
-    variants.push({
-      supplier_size: cleanText(sourceCard.size),
-      supplier_sku: cleanText(sourceCard.sku),
-      supplier_variant_code: cleanText(sourceCard.id_product_attribute),
-      stock_quantity: sourceCard.stock_quantity ?? 1,
-      is_available: Boolean(sourceCard.stock_quantity ?? 1),
-      currency: 'EUR',
-      raw_variant_json: sourceCard
+    addVariant({
+      size: sourceCard.size || 'U',
+      sku: sourceCard.sku,
+      id_product_attribute: sourceCard.id_product_attribute,
+      stock_quantity: sourceCard.stock_quantity ?? 1
     });
   }
 
   return variants;
 }
-
 function normalizeProduct(product, quickviewHtml, sourceCard = {}) {
   const productCode = cleanText(
     sourceCard.product_code ||
@@ -368,7 +413,23 @@ async function collectListingCards(page) {
       ) || null;
 
       const stockLine = lines.find(line => /pc\.|pcs|in stock/i.test(line)) || null;
+      const variantRows = [];
 
+      const rowCandidates = Array.from(el.querySelectorAll('tr, .row, li, div'));
+
+      for (const row of rowCandidates) {
+        const rowText = (row.innerText || '').replace(/\s+/g, ' ').trim();
+
+        const match = rowText.match(/^([A-Z]*\s?\d+(?:\.\d+)?|XS|S|M|L|XL|XXL|U)\s+(\d+)\s*pc\.?/i);
+
+        if (match) {
+          variantRows.push({
+            size: match[1].trim(),
+            stock_quantity: Number(match[2]),
+            raw_text: rowText
+          });
+        }
+      }
       return {
         lines,
         html,
@@ -379,6 +440,7 @@ async function collectListingCards(page) {
         product_code_line: productCodeLine,
         size_line: sizeLine,
         stock_line: stockLine
+        variant_rows: variantRows,
       };
     });
 
@@ -402,6 +464,7 @@ async function collectListingCards(page) {
       discount_percent: data.discount,
       size: data.size_line,
       stock_quantity: data.stock_line ? 1 : null,
+      variants_from_listing: data.variant_rows || [],
       image_main: data.image_urls[0] || null,
       image_hover: data.image_urls[1] || null,
       quickview_outer_html: data.quickview_outer_html,
