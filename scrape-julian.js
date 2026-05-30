@@ -346,11 +346,17 @@ async function collectListingCards(page) {
 
     const fullHtml = await card.innerHTML().catch(() => '');
     if (i === 0) {
-      console.log('FULL HTML CARD START');
-      console.log(JSON.stringify(fullHtml));
-      console.log('FULL HTML CARD END');
-    }
+      const quickViewButton = card.querySelector(
+        '[data-link-action="quickview"]'
+      );
 
+      console.log('QUICKVIEW OUTERHTML');
+      console.log(
+        quickViewButton
+          ? quickViewButton.outerHTML
+          : 'NOT FOUND'
+      );
+    }
     const href =
       await card.locator('a').first().getAttribute('href').catch(() => null);
 
