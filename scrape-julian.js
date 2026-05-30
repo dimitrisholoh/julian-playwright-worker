@@ -345,6 +345,11 @@ async function collectListingCards(page) {
       .filter(Boolean);
 
     const fullHtml = await card.innerHTML().catch(() => '');
+    if (i === 0) {
+      console.log('FULL HTML CARD START');
+      console.log(fullHtml);
+      console.log('FULL HTML CARD END');
+    }
 
     const href =
       await card.locator('a').first().getAttribute('href').catch(() => null);
