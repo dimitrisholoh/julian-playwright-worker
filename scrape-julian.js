@@ -550,6 +550,111 @@ async function clickQuickviewOnce(page, card, attempt) {
   }
 }
 
+async function clickQuickviewOnce(page, card, attempt) {
+  console.log('Quickview hybrid attempt:', {
+    index: card.index,
+    attempt,
+    brand: card.brand,
+    product_code: card.product_code
+  });
+
+  await closeModal(page);
+
+  let capturedUrl = null;
+
+  const onRequest = request => {
+    const url = request.url();
+
+    if (
+      url.includes('controller=product') &&
+      url.includes('action=quickview') &&
+      url.includes('id_product')
+    ) {
+      capturedUrl = url;
+      console.log('CAPTURED QUICKVIEW URL:', url);
+    }
+  };
+
+  page.on('request', onRequest);
+
+  try {
+    const cardLocator = page.locator('.product-miniature').nth(card.card_index);
+
+    await cardLocator.scrollIntoViewIfNeeded().catch(() => {});
+    await page.waitForTimeout(700);
+
+    await cardLocator.hover({ force: true }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    const button = cardLocator
+      .locator('[data-link-action="quickview"], .quick-view, .button-action.quick-view')
+      .first();
+
+    if (!(await button.count())) {
+      throw new Error('Quickview button not found');
+    }
+
+    const responsePromise = page.waitForResponse(
+      response => {
+        const url = response.url();
+
+        return (
+          response.status() === 200 &&
+          url.includes('controller=product') &&
+          url.includes('action=quickview') &&
+          url.includes('id_product')
+        );
+      },
+      { timeout: 8000 }
+    ).catch(() => null);
+
+    await button.click({ force: true, timeout: 10000 });
+
+    let json = null;
+
+    const response = await responsePromise;
+
+    if (response) {
+      console.log('CAPTURED RESPONSE URL:', response.url());
+      json = await response.json();
+    }
+
+    if (!json && capturedUrl) {
+      console.log('Fallback direct request:', capturedUrl);
+
+      const directResponse = await page.request.get(capturedUrl, {
+        timeout: 30000,
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          'Accept': 'application/json, text/javascript, */*; q=0.01'
+        }
+      });
+
+      if (!directResponse.ok()) {
+        throw new Error(`Fallback request failed: ${directResponse.status()}`);
+      }
+
+      json = await directResponse.json();
+    }
+
+    if (!json) {
+      throw new Error('No quickview response and no captured URL');
+    }
+
+    if (!json.product) {
+      throw new Error('No product in quickview response');
+    }
+
+    return {
+      product: json.product,
+      quickview_html: json.quickview_html || ''
+    };
+  } finally {
+    page.off('request', onRequest);
+    await closeModal(page);
+  }
+}
+
   
 async function clickQuickviewAndCapture(page, card) {
   let lastError;
