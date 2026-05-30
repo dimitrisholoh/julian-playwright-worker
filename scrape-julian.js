@@ -325,24 +325,6 @@ async function openListing(page, pageNumber = 1) {
 
   return productCount;
 }
-  await page.waitForTimeout(5000);
-
-  await page.evaluate(url => {
-    window.location.href = url;
-  }, pageUrl);
-
-  await page.waitForLoadState('domcontentloaded').catch(() => {});
-  await page.waitForTimeout(10000);
-
-  await page.waitForTimeout(10000);
-  await page.mouse.wheel(0, 15000);
-  await page.waitForTimeout(5000);
-
-  const productCount = await page.locator('.product-miniature').count();
-  console.log('Products found on page:', productCount);
-
-  return productCount;
-}
 
 async function collectListingCards(page) {
   const cards = [];
