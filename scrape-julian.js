@@ -274,15 +274,20 @@ async function login(page) {
   }
 
   await page.goto(process.env.JULIAN_LOGIN_URL, {
-    waitUntil: 'networkidle',
+    waitUntil: 'domcontentloaded',
     timeout: 120000
+  }).catch(e => {
+    console.log('Login goto warning:', e.message);
   });
+
+  await page.waitForTimeout(3000);
 
   await page.fill('input[type="email"]', process.env.JULIAN_EMAIL);
   await page.fill('input[type="password"]', process.env.JULIAN_PASSWORD);
+
   await page.keyboard.press('Enter');
 
-  await page.waitForLoadState('networkidle', { timeout: 120000 }).catch(() => {});
+  await page.waitForTimeout(8000);
 
   console.log('Login completed');
   console.log('Current URL:', page.url());
@@ -291,16 +296,35 @@ async function login(page) {
 async function openListing(page, pageNumber = 1) {
   const pageUrl =
     pageNumber > 1
-      ? `${LISTING_URL}?page=${pageNumber}`
-      : LISTING_URL;
+      ? `/306-all?page=${pageNumber}`
+      : `/306-all`;
 
-  console.log('Opening listing URL:', pageUrl);
+  console.log('Opening listing URL:', `https://b2bfashion.online${pageUrl}`);
 
-  await page.goto('https://b2bfashion.online/', {
-    waitUntil: 'networkidle',
-    timeout: 120000
+  await page.evaluate(url => {
+    window.location.href = url;
+  }, pageUrl).catch(e => {
+    console.log('Location change warning:', e.message);
   });
 
+  await page.waitForTimeout(15000);
+
+  await page.waitForLoadState('domcontentloaded', { timeout: 120000 }).catch(e => {
+    console.log('Listing loadstate warning:', e.message);
+  });
+
+  await page.mouse.wheel(0, 15000);
+  await page.waitForTimeout(5000);
+
+  console.log('Listing opened');
+  console.log('Current listing URL:', page.url());
+
+  const productCount = await page.locator('.product-miniature').count();
+
+  console.log('Products found on page:', productCount);
+
+  return productCount;
+}
   await page.waitForTimeout(5000);
 
   await page.evaluate(url => {
@@ -380,7 +404,7 @@ async function collectListingCards(page) {
   return cards;
 }
 
-async function fetchQuickview(page, card) {
+ fetchQuickview(page, card) {
   if (!card.quickview_url) {
     throw new Error(`Missing quickview_url for card ${card.index}`);
   }
@@ -409,7 +433,7 @@ async function fetchQuickview(page, card) {
   };
 }
 
-async function sendWebhook(products) {
+ sendWebhook(products) {
   if (!process.env.N8N_WEBHOOK_URL) {
     throw new Error('N8N_WEBHOOK_URL is missing');
   }
@@ -432,7 +456,7 @@ async function sendWebhook(products) {
   console.log('Webhook sent successfully');
 }
 
-async function run() {
+ run() {
   const browser = await chromium.launch({
     headless: true
   });
